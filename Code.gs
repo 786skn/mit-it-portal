@@ -115,9 +115,11 @@ function doGet(e) {
     var p      = (e && e.parameter) ? e.parameter : {};
     var action = p.action || '';
 
+    // ── PING ──────────────────────────────────────────────
+    if (action === 'ping') return ok({ status: 'ok', success: true, method: 'GET', app: 'MIT-IT-Portal' });
+
     // ── READ actions ──────────────────────────────────────
-    if (action === 'ping')         return ok({ status: 'ok', success: true, method: 'GET', app: 'MIT-IT-Portal' });
-    if (action === 'getTickets')   return ok({ rows: readSheet(SHEETS.tickets) });
+    if (action === 'getTickets')   return ok({ rows: readSheet(SHEETS.tickets).map(normalizeTicketRow) });
     if (action === 'getWOs')       return ok({ rows: readSheet(SHEETS.wos) });
     if (action === 'getStaff')     return ok({ rows: readSheet(SHEETS.staff) });
     if (action === 'getVendorReg') return ok({ rows: readSheet(SHEETS.vendorReg) });
@@ -131,6 +133,16 @@ function doGet(e) {
     if (action === 'getDocs')      return ok({ rows: readSheet(SHEETS.docs) });
     if (action === 'getDashboard') return ok(getDashboard());
     if (action === 'sendOTP')      return handleSendOTP(p);
+
+    // ── USER MANAGEMENT ───────────────────────────────────
+    if (action === 'getUsers')    return getUsersHandler();
+    if (action === 'addUser')     return addUserHandler(p);
+    if (action === 'updateUser')  return updateUserHandler(p);
+    if (action === 'deleteUser')  return deleteUserHandler(p);
+
+    // ── EDIT / DELETE rows ────────────────────────────────
+    if (action === 'deleteRow')   return deleteRowHandler(p);
+    if (action === 'updateRow')   return updateRowHandler(p);
 
     // ── WRITE actions (all arrive via GET URL params) ─────
     if (action === 'updateStatus') return updateTicketStatus(p.ticketId, p.status);
@@ -482,7 +494,16 @@ function addTicket(p) {
   var lastRow   = sheet.getLastRow();
   var num       = (lastRow > 0) ? lastRow : 1;
   var ticketId  = 'MIT-IT-' + String(num).padStart(3, '0');
-  return addToSheet(SHEETS.tickets, ticketRow(p, ticketId));
+  var result    = addToSheet(SHEETS.tickets, ticketRow(p, ticketId));
+  // Auto-send critical alert email
+  if ((p.priority || '').toLowerCase() === 'critical') {
+    try {
+      sendCriticalAlert(ticketId, p.description || '', p.dept || '', p.assignedTo || '');
+    } catch(ex) {
+      Logger.log('Critical alert error: ' + ex.message);
+    }
+  }
+  return result;
 }
 
 function addWO(p) {
@@ -1170,17 +1191,6 @@ function setupDailyReportTrigger() {
   Logger.log('To test immediately, run: sendDailyReport()');
 }
 
-// Also register deleteRow and updateRow in doGet:
-// These are added to the action chain at the bottom
-var _origDoGet = doGet;
-function doGet(e) {
-  var p      = (e && e.parameter) ? e.parameter : {};
-  var action = p.action || '';
-  if (action === 'deleteRow') return deleteRowHandler(p);
-  if (action === 'updateRow') return updateRowHandler(p);
-  return _origDoGet(e);
-}
-
 // ── Test daily report (run from editor) ──
 function testSendDailyReport() {
   var result = sendDailyReport();
@@ -1308,18 +1318,6 @@ function deleteUserHandler(p) {
   return err('User not found: ' + username);
 }
 
-// Wire getUsers/addUser/updateUser/deleteUser into doGet
-var _doGetWithUserMgmt = doGet;
-function doGet(e) {
-  var p = (e && e.parameter) ? e.parameter : {};
-  var action = p.action || '';
-  if (action === 'getUsers')    return getUsersHandler();
-  if (action === 'addUser')     return addUserHandler(p);
-  if (action === 'updateUser')  return updateUserHandler(p);
-  if (action === 'deleteUser')  return deleteUserHandler(p);
-  return _doGetWithUserMgmt(e);
-}
-
 // ── Test user management ──
 function testUserManagement() {
   Logger.log('--- testUserManagement ---');
@@ -1372,18 +1370,6 @@ function normalizeTicketRow(r) {
   };
 }
 
-// Override getTickets to return normalized rows
-var _origDoGetTickets = doGet;
-function doGet(e) {
-  var p = (e && e.parameter) ? e.parameter : {};
-  if (p.action === 'getTickets') {
-    var raw = readSheet(SHEETS.tickets);
-    return ok({ rows: raw.map(normalizeTicketRow) });
-  }
-  return _origDoGetTickets(e);
-}
-
-
 // ════════════════════════════════════════════════════════════
 //  CRITICAL ALERT EMAIL
 //  Sends an immediate alert when a Critical ticket is logged.
@@ -1426,26 +1412,6 @@ function sendCriticalAlert(ticketId, description, dept, assignedTo) {
     Logger.log('❌ Critical alert email failed: ' + ex.message);
   }
 }
-
-// Patch addTicket to auto-send critical alert
-var _origAddTicket = addTicket;
-function addTicket(p) {
-  p = p || {};
-  var result = _origAddTicket(p);
-  // Fire critical alert if priority is Critical
-  if ((p.priority || '').toLowerCase() === 'critical') {
-    try {
-      var sheet = getOrCreateSheet(SHEETS.tickets);
-      var lastRow = sheet.getLastRow();
-      var ticketId = 'MIT-IT-' + String(lastRow > 0 ? lastRow - 1 : 1).padStart(3, '0');
-      sendCriticalAlert(ticketId, p.description || '', p.dept || '', p.assignedTo || '');
-    } catch(ex) {
-      Logger.log('Critical alert error: ' + ex.message);
-    }
-  }
-  return result;
-}
-
 
 // ════════════════════════════════════════════════════════════
 //  WEEKLY SUMMARY REPORT  (every Monday 8 AM)
@@ -1562,10 +1528,12 @@ function setupWeeklyReportTrigger() {
 function setupAllTriggers() {
   setupDailyReportTrigger();
   setupWeeklyReportTrigger();
+  setupPendingReminderTrigger();
   Logger.log('✅ All triggers configured:');
-  Logger.log('  Daily report   → every day   7 AM');
-  Logger.log('  Weekly report  → every Monday 8 AM');
-  Logger.log('  Critical alert → auto on ticket submit (Priority=Critical)');
+  Logger.log('  Daily report      → every day 7 AM');
+  Logger.log('  Pending reminders → every day 8 AM (per-user personalised)');
+  Logger.log('  Weekly report     → every Monday 8 AM');
+  Logger.log('  Critical alert    → auto on ticket submit (Priority=Critical)');
   Logger.log('Recipients: ' + REPORT_RECIPIENTS.join(', '));
 }
 
@@ -1941,15 +1909,6 @@ function setupPendingReminderTrigger() {
   Logger.log('To: Each non-admin user with a registered email address');
   Logger.log('To test immediately, run: testSendPendingReminder()');
 }
-
-// ── Update setupAllTriggers to include pending reminder ───────────────
-var _origSetupAllTriggers = setupAllTriggers;
-function setupAllTriggers() {
-  _origSetupAllTriggers();
-  setupPendingReminderTrigger();
-  Logger.log('  Pending reminders → every day 8 AM (per-user personalised)');
-}
-
 
 // ════════════════════════════════════════════════════════════
 //  TEST FUNCTIONS
