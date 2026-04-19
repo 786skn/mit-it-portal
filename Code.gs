@@ -567,13 +567,13 @@ function getDashboard() {
   tickets.forEach(function(t) { var pr = t['Priority'] || 'Medium'; pris[pr] = (pris[pr] || 0) + 1; });
 
   return {
-    total: total,
-    resolved: resolved,
+    total:      total,
+    resolved:   resolved,
     inProgress: inProgress,
-    critical: critical,
-    vendorWOs: wos.length,
-    categories: cats,
-    priorities: pris
+    critical:   critical,
+    vendorWOs:  wos.length,
+    byCategory: cats,
+    byPriority: pris
   };
 }
 
@@ -584,15 +584,33 @@ function getDashboard() {
 // ════════════════════════════════════════════════════════════
 
 function handleSendOTP(p) {
-  p = p || {};   // FIX
+  p = p || {};
   var username = (p.username || '').toLowerCase().trim();
   if (!username) return err('username parameter is required');
 
-  var email = USER_EMAILS[username];
-  if (!email) return err('No email registered for user: ' + username);
+  // ── Look up email: USER_EMAILS map first, then Users sheet ──
+  var email = USER_EMAILS[username] || '';
+
+  // If not in hardcoded map, check Users sheet (for users added via User Management)
+  if (!email) {
+    try {
+      var usersSheet = readSheet('Users');
+      var userRow = usersSheet.filter(function(r) {
+        return (r['Username'] || '').toLowerCase().trim() === username;
+      })[0];
+      if (userRow) email = (userRow['Email'] || '').trim();
+    } catch(ex) {
+      Logger.log('Users sheet lookup failed: ' + ex.message);
+    }
+  }
+
+  if (!email) {
+    return err('No email registered for user: ' + username +
+      '. Please contact the IT admin to add your email in User Management.');
+  }
 
   var otp = Math.floor(100000 + Math.random() * 900000).toString();
-  var exp = Date.now() + 10 * 60 * 1000;
+  var exp = Date.now() + 10 * 60 * 1000; // 10 minutes
 
   PropertiesService.getScriptProperties().setProperty(
     'otp_' + username,
@@ -602,23 +620,33 @@ function handleSendOTP(p) {
   try {
     MailApp.sendEmail({
       to:      email,
-      subject: 'MIT ACSC IT Portal – Password Reset OTP',
-      body: [
-        'Dear ' + (p.name || username) + ',',
-        '',
-        'Your OTP for password reset is:',
-        '',
-        '    ' + otp,
-        '',
-        'This OTP is valid for 10 minutes.',
-        'If you did not request this, please ignore this email.',
-        '',
-        '– MIT ACSC IT Section',
-        'Alandi, Pune – 412105'
-      ].join('\n')
+      from:    FROM_EMAIL,
+      name:    'MIT ACSC IT Section',
+      subject: 'MIT ACSC IT Portal \u2013 Password Reset OTP',
+      htmlBody: [
+        '<div style="font-family:Arial,sans-serif;max-width:500px">',
+        '<div style="background:#8B1840;padding:16px 20px;border-radius:8px 8px 0 0">',
+        '<h2 style="color:#fff;margin:0;font-size:18px">MIT ACSC \u2013 IT Portal</h2>',
+        '<p style="color:#f0c4d4;margin:4px 0 0;font-size:12px">Password Reset OTP</p>',
+        '</div>',
+        '<div style="background:#f9f9f9;border:1px solid #ddd;border-radius:0 0 8px 8px;padding:20px">',
+        '<p style="font-size:14px">Dear <b>' + (p.name || username) + '</b>,</p>',
+        '<p style="font-size:13px">Your One-Time Password (OTP) for resetting your MIT ACSC IT Portal password is:</p>',
+        '<div style="background:#1F3864;color:#fff;font-size:32px;font-weight:700;letter-spacing:10px;',
+        'text-align:center;padding:16px;border-radius:8px;margin:16px 0">' + otp + '</div>',
+        '<p style="font-size:12px;color:#666">This OTP is valid for <b>10 minutes</b> only.</p>',
+        '<p style="font-size:12px;color:#666">If you did not request this, please ignore this email and contact the IT admin immediately.</p>',
+        '<hr style="border:none;border-top:1px solid #ddd;margin:16px 0"/>',
+        '<p style="font-size:11px;color:#999">MIT ACSC IT Section | Alandi, Pune \u2013 412105</p>',
+        '</div></div>'
+      ].join(''),
+      body: 'Dear ' + (p.name || username) + ',\n\nYour OTP for MIT ACSC IT Portal password reset is:\n\n' + otp +
+            '\n\nThis OTP is valid for 10 minutes.\n\nMIT ACSC IT Section, Alandi'
     });
+    Logger.log('\u2705 OTP sent to ' + email + ' for user: ' + username);
     return ok({ success: true, message: 'OTP sent to registered email' });
   } catch(ex) {
+    Logger.log('\u274c OTP email failed for ' + username + ': ' + ex.message);
     return err('Email send failed: ' + ex.message);
   }
 }
