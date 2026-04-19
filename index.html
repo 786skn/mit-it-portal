@@ -2819,7 +2819,7 @@ function doLogin() {
                 deny:       r['Deny'] ? r['Deny'].split(',').map(s=>s.trim()).filter(Boolean) : (typeof ROLE_DENY_PRESETS !== 'undefined' ? ROLE_DENY_PRESETS[r['Role']||'tech'] : ['invoice','budget','staff','vendor-reg','dept-report','uploads','scrap','search']) || [],
                 status:     r['Status']     || 'active',
                 pass:       r['Temp Password'] || (uname + '@Mit2025'),
-                mustChange: r['MustChange'] === 'true' || true,
+                mustChange: r['MustChange'] === 'true' || r['MustChange'] === true,
               };
             }
           });
@@ -2919,7 +2919,7 @@ function saveNewPassword() {
   const user = USERS[username];
   const isForced = !!pendingLoginUser;
 
-  // Validate old password (skip for forced first-time change if using default)
+  // Validate old password (skip for forced first-time change)
   if (!isForced && user.pass !== oldPass) {
     errEl.textContent = '❌ Current password is incorrect'; errEl.style.display='block'; return;
   }
@@ -2933,10 +2933,23 @@ function saveNewPassword() {
     errEl.textContent = '❌ New password must be different from the current one'; errEl.style.display='block'; return;
   }
 
-  // Save new password
+  // Save new password locally
   USERS[username].pass = newPass;
   USERS[username].mustChange = false;
+  USERS[username].tempPassword = '';
   saveUsers(USERS);
+
+  // ── Sync mustChange=false back to Google Sheets ──────────────
+  // This is critical — without this, next device sync re-reads
+  // MustChange=true from Sheets and forces change again
+  if (GS_URL) {
+    gsGet({
+      action: 'updateUser',
+      username: username,
+      mustChange: 'false',
+      tempPassword: ''
+    }).catch(() => {}); // silent — local save already done
+  }
 
   document.getElementById('cp-overlay').classList.remove('open');
   showToast('✅ Password changed successfully!');
@@ -6181,7 +6194,7 @@ async function loadUserManagement() {
             deny:       r['Deny'] ? r['Deny'].split(',').map(s=>s.trim()).filter(Boolean) : ROLE_DENY_PRESETS[r['Role']||'tech'],
             status:     r['Status']     || 'active',
             pass:       _allUsers[uname]?.pass || r['Temp Password'] || (uname + '@Mit2025'),
-            mustChange: r['MustChange'] === 'true' || r['MustChange'] === true || !_allUsers[uname]?.pass,
+            mustChange: r['MustChange'] === 'true' || r['MustChange'] === true,
           };
         });
         saveUsers(_allUsers);
