@@ -2653,41 +2653,56 @@ const DEFAULT_USERS = {
   // admin — full access to everything
   'admin':      { pass: 'mitit@2025',   role: 'admin', name: 'System Administrator', mustChange: false,
                   deny: [] },
-  // IT Technicians — own tasks + equipment + labs; no invoice/budget/staff mgmt/document library/search
-  'rutuj': { pass: 'rutuj@123',    role: 'tech',  name: 'Rutuj Deshmukh (IT Tech)', mustChange: false,
+  // IT Technicians
+  'rutuj':      { pass: 'rutuj@123',    role: 'tech',  name: 'Rutuj Deshmukh (IT Tech)', mustChange: false,
                   deny: ['invoice','budget','staff','vendor-reg','dept-report','uploads','scrap','search'] },
-  'sandeep':  { pass: 'sandeep@123',    role: 'tech',  name: 'Sandeep Muley (IT Tech)', mustChange: true,
+  'sandeep':    { pass: 'sandeep@123',  role: 'tech',  name: 'Sandeep Muley (IT Tech)', mustChange: false,
                   deny: ['invoice','budget','staff','vendor-reg','dept-report','uploads','scrap','search'] },
-  'mangesh':      { pass: 'mangesh@123',     role: 'tech',  name: 'Mangesh Sonawane (IT Tech)', mustChange: true,
+  'mangesh':    { pass: 'mangesh@123',  role: 'tech',  name: 'Mangesh Sonawane (IT Tech)', mustChange: false,
                   deny: ['invoice','budget','staff','vendor-reg','dept-report','uploads','scrap','search'] },
-
-  'pankaj':      { pass: 'pankaj@123',    role: 'tech',  name: 'Pankaj More (IT Tech)', mustChange: false,
+  'pankaj':     { pass: 'pankaj@123',   role: 'tech',  name: 'Pankaj More (IT Tech)', mustChange: false,
                   deny: ['invoice','budget','staff','vendor-reg','dept-report','uploads','scrap','search'] },
-
-  'ziyaafshan':      { pass: 'ziyaafshan@123',    role: 'tech',  name: 'Ziyaafshan Pathan (IT Tech)', mustChange: false,
+  'ziyaafshan': { pass: 'ziyaafshan@123', role: 'tech', name: 'Ziyaafshan Pathan (IT Tech)', mustChange: false,
                   deny: ['invoice','budget','staff','vendor-reg','dept-report','uploads','scrap','search'] },
-
-
-  'ashwni':      { pass: 'ashwni@123',    role: 'tech',  name: 'Ashwni Kadam (IT Tech)', mustChange: false,
+  'ashwni':     { pass: 'ashwni@123',   role: 'tech',  name: 'Ashwni Kadam (IT Tech)', mustChange: false,
                   deny: ['invoice','budget','staff','vendor-reg','dept-report','uploads','scrap','search'] },
-
-  'bhavik':      { pass: 'bhavik@123',    role: 'tech',  name: 'Bhavik Shah (IT Tech)', mustChange: false,
+  'bhavik':     { pass: 'bhavik@123',   role: 'tech',  name: 'Bhavik Shah (IT Tech)', mustChange: false,
                   deny: ['invoice','budget','staff','vendor-reg','dept-report','uploads','scrap','search'] },
-
-
-  // View-only roles — reports/equipment/labs readable; no add/edit
-  'director':   { pass: 'director@mit', role: 'view',  name: 'Director', mustChange: true,
+  // View-only roles
+  'director':   { pass: 'director@mit', role: 'view',  name: 'Director', mustChange: false,
                   deny: ['invoice','challan','scrap','handover','staff','vendor-reg','uploads'] },
-  'registrar':  { pass: 'reg@mit2025',  role: 'view',  name: 'Registrar', mustChange: true,
-                  deny: ['invoice','budget','equipment','labs','scrap','handover','uploads']  },
+  'registrar':  { pass: 'reg@mit2025',  role: 'view',  name: 'Registrar', mustChange: false,
+                  deny: ['invoice','budget','equipment','labs','scrap','handover','uploads'] },
 };
 
 function loadUsers() {
+  // Start with DEFAULT_USERS as base
+  const base = JSON.parse(JSON.stringify(DEFAULT_USERS));
   const saved = localStorage.getItem('it_portal_users');
-  if (saved) { try { return JSON.parse(saved); } catch(e) {} }
-  return JSON.parse(JSON.stringify(DEFAULT_USERS));
+  if (!saved) return base;
+  try {
+    const savedObj = JSON.parse(saved);
+    // Merge: saved data overrides defaults for existing users
+    // This preserves changed passwords and mustChange=false even after code updates
+    Object.keys(savedObj).forEach(uname => {
+      if (base[uname]) {
+        // Existing user: overlay saved fields onto defaults
+        // Critically: if saved has mustChange=false, keep it (don't let default reset it)
+        base[uname] = Object.assign({}, base[uname], savedObj[uname]);
+      } else {
+        // New user not in DEFAULT_USERS (added via User Management)
+        base[uname] = savedObj[uname];
+      }
+    });
+    return base;
+  } catch(e) {
+    return base;
+  }
 }
-function saveUsers(u) { localStorage.setItem('it_portal_users', JSON.stringify(u)); }
+function saveUsers(u) {
+  // Save all users including changes. loadUsers() will correctly merge with defaults.
+  localStorage.setItem('it_portal_users', JSON.stringify(u));
+}
 let USERS = loadUsers();
 
 // Role permissions
