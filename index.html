@@ -3829,13 +3829,17 @@ async function gsPost(params) {
 }
 
 async function submitTicket() {
-  const btn = document.getElementById('submit-btn');
-  const required = ['f-date','f-assigned','f-assignedby','f-dept','f-category','f-description','f-priority'];
-  for (const id of required) {
-    if (!document.getElementById(id).value.trim()) {
-      showToast('⚠️ Please fill all required fields'); return;
-    }
+  // Validate required fields
+  if (!validateRequired(['f-date','f-assigned','f-assignedby','f-dept','f-category','f-description','f-priority'])) {
+    showToast('⚠️ Fill all required fields (marked *)'); return;
   }
+  // Duplicate check
+  const desc = document.getElementById('f-description').value.trim();
+  if (isDuplicateTicket(desc)) {
+    if (!confirm('⚠️ A similar open ticket for today already exists.\n\nSubmit anyway?')) return;
+  }
+
+  const btn = document.getElementById('submit-btn');
   const payload = {
     action:      'addTicket',
     date:        document.getElementById('f-date').value,
@@ -3876,6 +3880,12 @@ async function submitTicket() {
 
 // ── SUBMIT WO ──────────────────────────────────────────────────────────────
 async function submitWO() {
+  if (!validateRequired(['wo-vendor','wo-desc','wo-coordinator'])) {
+    showToast('⚠️ Fill required fields (marked *)'); return;
+  }
+  if (isDuplicateWO(document.getElementById('wo-vendor').value, document.getElementById('wo-desc').value)) {
+    if (!confirm('⚠️ Similar active WO for this vendor exists.\n\nSubmit anyway?')) return;
+  }
   const payload = {
     action:      'addWO',
     date:        document.getElementById('wo-date').value,
@@ -3889,9 +3899,6 @@ async function submitWO() {
     invoiceAmt:  document.getElementById('wo-invoice').value,
     remarks:     document.getElementById('wo-remarks').value,
   };
-  if (!payload.vendorName || !payload.description) {
-    showToast('⚠️ Fill vendor name & description'); return;
-  }
   if (!GS_URL) {
     allWOs.unshift({...payload, woId:'WO-'+String(allWOs.length+1).padStart(3,'0')});
     showToast('✅ Work order saved (demo mode)');
@@ -4662,6 +4669,13 @@ async function loadStaff() {
   } catch(e) { document.getElementById('staff-table-wrap').innerHTML = '<div style="padding:20px;color:var(--muted);font-size:12px;text-align:center">Could not load staff data</div>'; }
 }
 async function submitStaff() {
+  if (!validateRequired(['sf-empid','sf-name','sf-desig','sf-mobile','sf-email'])) {
+    showToast('⚠️ Fill required fields (marked *)'); return;
+  }
+  if (!document.getElementById('sf-email').value.includes('@')) {
+    document.getElementById('sf-email').classList.add('invalid');
+    showToast('⚠️ Enter a valid email address'); return;
+  }
   const p = {
     action:'addStaff',
     empId:    document.getElementById('sf-empid').value,
@@ -4674,7 +4688,6 @@ async function submitStaff() {
     doj:      document.getElementById('sf-doj').value,
     remarks:  document.getElementById('sf-remarks').value,
   };
-  if (!p.name) { showToast('⚠️ Enter staff name'); return; }
   if (!GS_URL) { showToast('⚠️ Connect mit data servers first'); return; }
   try {
     const d = await gsGet(p);
@@ -5149,38 +5162,6 @@ function otpSetNewPassword() {
 // ════════════════════════════════════════════════════════════════════════
 //  REQUIRED FIELD + DUPLICATE CHECK OVERRIDES
 // ════════════════════════════════════════════════════════════════════════
-const _origSubmitTicket = submitTicket;
-async function submitTicket() {
-  if (!validateRequired(['f-date','f-assigned','f-assignedby','f-dept','f-category','f-description','f-priority'])) {
-    showToast('⚠️ Fill all required fields (marked *)'); return;
-  }
-  const desc = document.getElementById('f-description').value.trim();
-  if (isDuplicateTicket(desc)) {
-    if (!confirm('⚠️ A similar open ticket for today already exists.\n\nSubmit anyway?')) return;
-  }
-  await _origSubmitTicket();
-}
-const _origSubmitWO = submitWO;
-async function submitWO() {
-  if (!validateRequired(['wo-vendor','wo-desc','wo-coordinator'])) {
-    showToast('⚠️ Fill required fields (marked *)'); return;
-  }
-  if (isDuplicateWO(document.getElementById('wo-vendor').value, document.getElementById('wo-desc').value)) {
-    if (!confirm('⚠️ Similar active WO for this vendor exists.\n\nSubmit anyway?')) return;
-  }
-  await _origSubmitWO();
-}
-const _origSubmitStaff = submitStaff;
-async function submitStaff() {
-  if (!validateRequired(['sf-empid','sf-name','sf-desig','sf-mobile','sf-email'])) {
-    showToast('⚠️ Fill required fields (marked *)'); return;
-  }
-  if (!document.getElementById('sf-email').value.includes('@')) {
-    document.getElementById('sf-email').classList.add('invalid');
-    showToast('⚠️ Enter a valid email address'); return;
-  }
-  await _origSubmitStaff();
-}
 // ════════════════════════════════════════════════════════════════════════
 //  REQUIRED FIELD HELPERS INIT
 // ════════════════════════════════════════════════════════════════════════
