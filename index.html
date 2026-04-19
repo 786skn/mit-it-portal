@@ -3135,6 +3135,11 @@ function initPortal() {
   const t = d.toTimeString().slice(0,5);
   document.getElementById('f-time').value = t;
 
+  // Load saved docs from localStorage
+  const saved = JSON.parse(localStorage.getItem('it_portal_docs') || '[]');
+  if (saved.length) allDocuments = [...saved, ...DEMO_DOCS];
+  else allDocuments = DEMO_DOCS;
+
   if (GS_URL) {
     document.getElementById('setup-banner').style.display = 'none';
     document.getElementById('gs-url-input').value = GS_URL;
@@ -3142,6 +3147,9 @@ function initPortal() {
   } else {
     loadDemoData();
   }
+
+  setTimeout(addFieldHelpers, 600);
+  setTimeout(initDuplicateChecks, 800);
 }
 
 // ── PAGE ROUTER ────────────────────────────────────────────────────────────
@@ -3366,7 +3374,11 @@ async function testGsConnection() {
 }
 
 // ── LOAD ALL DATA ──────────────────────────────────────────────────────────
-function loadAll() { loadTickets(); loadWOs(); loadDashboard(); }
+function loadAll() {
+  const ind = document.getElementById('refresh-indicator');
+  if (ind) { ind.style.display = 'block'; setTimeout(() => { ind.style.display = 'none'; }, 2000); }
+  loadTickets(); loadWOs(); loadDashboard();
+}
 
 // ── DATA NORMALIZERS ───────────────────────────────────────────────────────
 // Sheets returns Title Case keys — portal uses camelCase.
@@ -5299,11 +5311,6 @@ function buildAIContext() {
   const topStaff = Object.entries(staff).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>k.split('(')[0].trim()+'('+v+')').join(', ');
   return `Tickets: total=${allTickets.length} open=${open} inProgress=${inP} resolved=${res} critical=${crit}\nVendor WOs: ${allWOs.length}\nTop categories: ${topCat}\nStaff with open tasks: ${topStaff}`;
 }
-const _origInitPortal = initPortal;
-function initPortal() { _origInitPortal(); setTimeout(addFieldHelpers, 600); }
-
-
-
 // ════════════════════════════════════════════════════════════════════════
 //  LABS MASTER
 // ════════════════════════════════════════════════════════════════════════
@@ -6157,18 +6164,6 @@ async function submitUpload() {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-//  PATCH initPortal to load saved docs + init duplicate checks
-// ════════════════════════════════════════════════════════════════════════
-const _prevInitPortal2 = initPortal;
-function initPortal() {
-  _prevInitPortal2();
-  // Load saved docs from localStorage
-  const saved = JSON.parse(localStorage.getItem('it_portal_docs') || '[]');
-  if (saved.length) allDocuments = [...saved, ...DEMO_DOCS];
-  else allDocuments = DEMO_DOCS;
-  setTimeout(initDuplicateChecks, 800);
-}
-
 // ════════════════════════════════════════════════════════════════════════
 //  USER MANAGEMENT  (admin only)
 //  Users stored in: Google Sheet "Users" tab (if GS_URL set)
@@ -6741,18 +6736,6 @@ if ('serviceWorker' in navigator) {
 
 // ════════════════════════════════════════════════════════════
 //  AUTO-REFRESH VISUAL INDICATOR
-// ════════════════════════════════════════════════════════════
-// Patch loadAll to show indicator
-const _origLoadAll = loadAll;
-function loadAll() {
-  const ind = document.getElementById('refresh-indicator');
-  if (ind) {
-    ind.style.display = 'block';
-    setTimeout(() => { ind.style.display = 'none'; }, 2000);
-  }
-  _origLoadAll();
-}
-
 // ════════════════════════════════════════════════════════════
 //  KEYBOARD SHORTCUTS  (admin productivity)
 // ════════════════════════════════════════════════════════════
