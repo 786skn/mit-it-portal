@@ -83,7 +83,8 @@ var USER_EMAILS = {
   'ashwni':     'ashwni.kadam@mitacsc.ac.in',
   'bhavik':     'bhavik.shah@mitacsc.ac.in',
   'director':   'director@mitacsc.ac.in',
-  'registrar':  'registrar@mitacsc.ac.in'
+  'registrar':  'registrar@mitacsc.ac.in',
+  'karan':      'nadafshakil.phd@gmail.com'
 };
 
 
@@ -644,7 +645,9 @@ function handleSendOTP(p) {
             '\n\nThis OTP is valid for 10 minutes.\n\nMIT ACSC IT Section, Alandi'
     });
     Logger.log('\u2705 OTP sent to ' + email + ' for user: ' + username);
-    return ok({ success: true, message: 'OTP sent to registered email' });
+    // Return OTP in response so portal can verify client-side
+    // (ScriptProperties is also set as server-side backup)
+    return ok({ success: true, message: 'OTP sent to registered email', otp: otp, exp: exp });
   } catch(ex) {
     Logger.log('\u274c OTP email failed for ' + username + ': ' + ex.message);
     return err('Email send failed: ' + ex.message);
