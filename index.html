@@ -1049,13 +1049,14 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
     <div id="cp-forced" style="display:none;margin-bottom:12px;padding:10px;
       background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);
       border-radius:8px;font-size:12px;color:var(--yellow);text-align:center">
-      ⚠️ You must change your password before continuing.
+      ⚠️ You must set a new password before continuing.
     </div>
     <div id="cp-voluntary" style="display:none"></div>
     <div class="cp-title">Change Password</div>
     <div class="cp-sub">Enter your new password below</div>
     <div class="login-form">
-      <div>
+      <!-- Current password — hidden for forced/first-time change -->
+      <div id="cp-old-wrap">
         <label class="login-label">Current Password</label>
         <input class="login-input" type="password" id="cp-old" placeholder="Current password"/>
       </div>
@@ -1220,6 +1221,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
         <option>Ziyaafshan Pathan (IT Tech)</option>
         <option>Ashwni Kadam (IT Tech)</option>
         <option>Bhavik Shah (IT Tech)</option>
+        <option>Karan RAC IT Solutions (IT Tech)</option>
         <option>System Administrator</option>
         <option>3rd Party - TechServ</option>
         <option>3rd Party - NetCare</option>
@@ -1451,6 +1453,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 	<option>Ziyaafshan Pathan (IT Tech)</option>
 	<option>Ashwni Kadam (IT Tech)</option>
 	<option>Bhavik Shah (IT Tech)</option>
+        <option>Karan RAC IT Solutions (IT Tech)</option>
         <option>System Administrator</option>
       </select>
     </div>
@@ -2673,6 +2676,9 @@ const DEFAULT_USERS = {
                   deny: ['invoice','challan','scrap','handover','staff','vendor-reg','uploads'] },
   'registrar':  { pass: 'reg@mit2025',  role: 'view',  name: 'Registrar', mustChange: false,
                   deny: ['invoice','budget','equipment','labs','scrap','handover','uploads'] },
+  // External IT vendor added via User Management
+  'karan':      { pass: 'karan@123',    role: 'tech',  name: 'Karan RAC IT Solutions (IT Tech)', mustChange: false,
+                  deny: ['invoice','budget','staff','vendor-reg','dept-report','uploads','scrap','search'] },
 };
 
 function loadUsers() {
@@ -2833,6 +2839,8 @@ function doLogin() {
                 email:      r['Email']      || '',
                 deny:       r['Deny'] ? r['Deny'].split(',').map(s=>s.trim()).filter(Boolean) : (typeof ROLE_DENY_PRESETS !== 'undefined' ? ROLE_DENY_PRESETS[r['Role']||'tech'] : ['invoice','budget','staff','vendor-reg','dept-report','uploads','scrap','search']) || [],
                 status:     r['Status']     || 'active',
+                // Temp Password holds the current working password
+                // (updated by saveNewPassword after each change)
                 pass:       r['Temp Password'] || (uname + '@Mit2025'),
                 mustChange: r['MustChange'] === 'true' || r['MustChange'] === true,
               };
@@ -2909,77 +2917,92 @@ function completeLogin(username, user) {
 
 // ── CHANGE PASSWORD ────────────────────────────────────────────────────────
 function showChangePassword(forced) {
-  document.getElementById('cp-forced').style.display = forced ? 'block' : 'none';
-  document.getElementById('cp-voluntary').style.display = forced ? 'none' : 'block';
-  document.getElementById('cp-old').value = '';
-  document.getElementById('cp-new').value = '';
+  document.getElementById('cp-forced').style.display   = forced ? 'block' : 'none';
+  document.getElementById('cp-voluntary').style.display = forced ? 'none'  : 'block';
+  // Hide "Current Password" field for forced first-login change
+  const oldWrap = document.getElementById('cp-old-wrap');
+  if (oldWrap) oldWrap.style.display = forced ? 'none' : 'block';
+  document.getElementById('cp-old').value     = '';
+  document.getElementById('cp-new').value     = '';
   document.getElementById('cp-confirm').value = '';
   document.getElementById('cp-err').style.display = 'none';
   document.getElementById('cp-overlay').classList.add('open');
+  // Focus new password field
+  setTimeout(() => document.getElementById('cp-new').focus(), 200);
 }
 
 function saveNewPassword() {
   USERS = loadUsers();
-  const oldPass    = document.getElementById('cp-old').value;
-  const newPass    = document.getElementById('cp-new').value;
-  const confirmPass= document.getElementById('cp-confirm').value;
+  const newPass    = document.getElementById('cp-new').value.trim();
+  const confirmPass= document.getElementById('cp-confirm').value.trim();
   const errEl      = document.getElementById('cp-err');
   errEl.style.display = 'none';
 
-  // Determine which user is changing password
   const username = pendingLoginUser ? pendingLoginUser.username
                  : currentUser      ? currentUser.username : null;
   if (!username) return;
 
-  const user = USERS[username];
+  const user     = USERS[username];
   const isForced = !!pendingLoginUser;
 
-  // Validate old password (skip for forced first-time change)
-  if (!isForced && user.pass !== oldPass) {
-    errEl.textContent = '❌ Current password is incorrect'; errEl.style.display='block'; return;
-  }
-  if (newPass.length < 6) {
-    errEl.textContent = '❌ New password must be at least 6 characters'; errEl.style.display='block'; return;
-  }
-  if (newPass !== confirmPass) {
-    errEl.textContent = '❌ Passwords do not match'; errEl.style.display='block'; return;
-  }
-  if (newPass === (isForced ? pendingLoginUser.pass : user.pass)) {
-    errEl.textContent = '❌ New password must be different from the current one'; errEl.style.display='block'; return;
+  // Validate old password ONLY for voluntary (non-forced) changes
+  if (!isForced) {
+    const oldPass = document.getElementById('cp-old').value;
+    if (user.pass !== oldPass) {
+      errEl.textContent = '❌ Current password is incorrect';
+      errEl.style.display = 'block'; return;
+    }
   }
 
-  // Save new password locally
-  USERS[username].pass = newPass;
+  if (newPass.length < 6) {
+    errEl.textContent = '❌ New password must be at least 6 characters';
+    errEl.style.display = 'block'; return;
+  }
+  if (newPass !== confirmPass) {
+    errEl.textContent = '❌ Passwords do not match';
+    errEl.style.display = 'block'; return;
+  }
+  // For forced change: new password must differ from the temp password used to log in
+  const currentPass = isForced ? (pendingLoginUser.pass || '') : user.pass;
+  if (newPass === currentPass) {
+    errEl.textContent = '❌ New password must be different from the current one';
+    errEl.style.display = 'block'; return;
+  }
+
+  // ── Save new password ──────────────────────────────────────
+  USERS[username].pass       = newPass;
   USERS[username].mustChange = false;
   USERS[username].tempPassword = '';
   saveUsers(USERS);
 
-  // ── Sync mustChange=false back to Google Sheets ──────────────
-  // This is critical — without this, next device sync re-reads
-  // MustChange=true from Sheets and forces change again
+  // Sync to Google Sheets — store new password in Temp Password column
+  // This is critical: when user logs in on another device, GAS sync reads
+  // Temp Password to get their current password. Without this they can't log in.
   if (GS_URL) {
-    gsGet({
-      action: 'updateUser',
-      username: username,
-      mustChange: 'false',
-      tempPassword: ''
-    }).catch(() => {}); // silent — local save already done
+    gsGet({ action:'updateUser', username, mustChange:'false', tempPassword: newPass })
+      .catch(() => {});
   }
 
   document.getElementById('cp-overlay').classList.remove('open');
   showToast('✅ Password changed successfully!');
 
-  // If forced (first login), now complete the login
+  // Complete login if this was a forced first-login change
   if (isForced && pendingLoginUser) {
-    const updated = USERS[pendingLoginUser.username];
-    completeLogin(pendingLoginUser.username, updated);
+    const updated = loadUsers()[username];
+    completeLogin(username, updated);
     pendingLoginUser = null;
   }
 }
 
 function cancelChangePassword() {
-  if (pendingLoginUser) { pendingLoginUser = null; return; } // just close
   document.getElementById('cp-overlay').classList.remove('open');
+  if (pendingLoginUser) {
+    // Forced cancel — clear pending login and re-show login screen
+    pendingLoginUser = null;
+    document.getElementById('login-overlay').classList.remove('hidden');
+    document.getElementById('login-pass').value = '';
+    document.getElementById('login-err').classList.remove('show');
+  }
 }
 
 function doLogout() {
@@ -3833,8 +3856,12 @@ const GS_WRITE_ACTIONS = new Set([
 async function gsGet(params) {
   // ALL requests use GET — this avoids CORS preflight entirely
   const url = GS_URL + '?' + new URLSearchParams(params).toString();
+  // 30-second timeout to prevent indefinite hangs
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
   try {
-    const res  = await fetch(url, { redirect: 'follow' });
+    const res  = await fetch(url, { redirect: 'follow', signal: controller.signal });
+    clearTimeout(timer);
     const text = await res.text();
     // Check for Google login redirect (wrong deployment settings)
     if (text.includes('accounts.google.com') || text.includes('ServiceLogin')) {
@@ -3846,6 +3873,8 @@ async function gsGet(params) {
       return { error: 'Bad response: ' + text.substring(0, 120) };
     }
   } catch(e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') return { error: 'Request timed out (30s). Check GAS URL or network.' };
     return { error: 'Network error: ' + e.message };
   }
 }
@@ -5173,16 +5202,35 @@ function verifyOTP() {
   } catch(e) { errEl.textContent='❌ Verification error'; errEl.style.display='block'; }
 }
 function otpSetNewPassword() {
-  const newPass = document.getElementById('otp-newpass').value;
-  const conf = document.getElementById('otp-confirmpass').value;
-  const errEl = document.getElementById('otp-err');
+  const newPass = document.getElementById('otp-newpass').value.trim();
+  const conf    = document.getElementById('otp-confirmpass').value.trim();
+  const errEl   = document.getElementById('otp-err');
   errEl.style.display = 'none';
-  if (newPass.length < 6) { errEl.textContent='❌ Min. 6 characters'; errEl.style.display='block'; return; }
-  if (newPass !== conf) { errEl.textContent='❌ Passwords do not match'; errEl.style.display='block'; return; }
+
+  if (newPass.length < 6) {
+    errEl.textContent = '❌ Min. 6 characters'; errEl.style.display = 'block'; return;
+  }
+  if (newPass !== conf) {
+    errEl.textContent = '❌ Passwords do not match'; errEl.style.display = 'block'; return;
+  }
+
   USERS = loadUsers();
-  USERS[otpVerifiedUser].pass = newPass;
+  USERS[otpVerifiedUser].pass       = newPass;
   USERS[otpVerifiedUser].mustChange = false;
+  USERS[otpVerifiedUser].tempPassword = '';
   saveUsers(USERS);
+
+  // ── Sync new password back to Google Sheets ────────────────
+  // Critical: without this, other devices still have the old password
+  if (GS_URL) {
+    gsGet({
+      action:       'updateUser',
+      username:     otpVerifiedUser,
+      tempPassword: newPass,
+      mustChange:   'false'
+    }).catch(() => {}); // silent — local save already done
+  }
+
   closeOTPOverlay();
   showToast('✅ Password reset successfully! Please log in.');
   otpVerifiedUser = null;
