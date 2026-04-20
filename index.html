@@ -2737,12 +2737,19 @@ function getVisibleWOs(wos) {
   if (!currentUser) return [];
   const perms = ROLE_PERMS[currentUser.role];
   if (!perms.ownOnly) return wos; // admin & view see all
-  // tech: only WOs where coordinator matches their name
-  return wos.filter(w =>
-    (w.coordinator || '').toLowerCase().includes(
-      currentUser.name.split(' ')[0].toLowerCase()
-    )
-  );
+
+  // Build match terms: full name, first name, username
+  const fullName  = (currentUser.name    || '').toLowerCase();
+  const firstName = fullName.split(' ')[0];
+  const username  = (currentUser.username|| '').toLowerCase();
+
+  return wos.filter(w => {
+    const coord = (w.coordinator || '').toLowerCase();
+    // Match if coordinator contains user's full name, first name, or username
+    return coord.includes(firstName) ||
+           coord.includes(fullName)  ||
+           (username && coord.includes(username));
+  });
 }
 
 // ── Generic own-data filter for tech users ─────────────────────────────────
@@ -2751,11 +2758,13 @@ function getVisibleRows(rows, techField) {
   if (!currentUser) return [];
   const perms = ROLE_PERMS[currentUser.role];
   if (!perms.ownOnly) return rows; // admin & view see all
-  const fullName  = currentUser.name.toLowerCase();
+  const fullName  = (currentUser.name    || '').toLowerCase();
   const firstName = fullName.split(' ')[0];
+  const username  = (currentUser.username|| '').toLowerCase();
   return rows.filter(r => {
     const val = (r[techField] || '').toLowerCase();
-    return val.includes(firstName) || val.includes(fullName);
+    return val.includes(firstName) || val.includes(fullName) ||
+           (username && val.includes(username));
   });
 }
 
@@ -3101,16 +3110,25 @@ function applyRolePermissions(role) {
     // Also auto-fill coordinator in WO form
     const coord = document.getElementById('wo-coordinator');
     if (coord) {
+      // Try setting value directly first (works if name matches an existing option)
       coord.value = currentUser.name;
-      if (!coord.value) {
-        const opt = document.createElement('option');
-        opt.value = currentUser.name;
-        opt.textContent = currentUser.name;
-        coord.appendChild(opt);
+      // If no match found (value is empty/wrong), add user's name as a new option
+      if (!coord.value || coord.value !== currentUser.name) {
+        // Check if option already exists (case-insensitive)
+        const existing = Array.from(coord.options).find(o =>
+          o.value.toLowerCase() === currentUser.name.toLowerCase()
+        );
+        if (!existing) {
+          const opt = document.createElement('option');
+          opt.value = currentUser.name;
+          opt.textContent = currentUser.name;
+          coord.appendChild(opt);
+        }
         coord.value = currentUser.name;
       }
       coord.disabled = true;
       coord.style.opacity = '0.7';
+      coord.title = 'Auto-assigned to your account';
     }
     // Auto-fill and lock "Assigned IT Tech" in Equipment Register form
     const eqTech = document.getElementById('eq-tech');
