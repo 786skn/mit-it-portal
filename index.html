@@ -1062,12 +1062,36 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
       </div>
       <div>
         <label class="login-label">New Password</label>
-        <input class="login-input" type="password" id="cp-new" placeholder="Min. 6 characters"/>
+        <div style="position:relative">
+          <input class="login-input" type="password" id="cp-new"
+            placeholder="Min. 6 characters"
+            oninput="updatePwdStrength(this.value)"
+            style="padding-right:40px"/>
+          <button type="button" onclick="togglePwdVisibility('cp-new',this)"
+            style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
+            background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px">👁</button>
+        </div>
+        <!-- Password strength bar -->
+        <div style="margin-top:6px">
+          <div style="height:4px;border-radius:4px;background:var(--border);overflow:hidden">
+            <div id="pwd-strength-bar" style="height:100%;width:0%;border-radius:4px;transition:all .3s"></div>
+          </div>
+          <div id="pwd-strength-label" style="font-size:10px;color:var(--muted);margin-top:3px"></div>
+        </div>
       </div>
       <div>
         <label class="login-label">Confirm New Password</label>
-        <input class="login-input" type="password" id="cp-confirm" placeholder="Repeat new password"
-          onkeydown="if(event.key==='Enter')saveNewPassword()"/>
+        <div style="position:relative">
+          <input class="login-input" type="password" id="cp-confirm"
+            placeholder="Repeat new password"
+            oninput="checkPwdMatch()"
+            onkeydown="if(event.key==='Enter')saveNewPassword()"
+            style="padding-right:40px"/>
+          <button type="button" onclick="togglePwdVisibility('cp-confirm',this)"
+            style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
+            background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px">👁</button>
+        </div>
+        <div id="pwd-match-label" style="font-size:10px;margin-top:3px"></div>
       </div>
       <div id="cp-err" style="display:none;background:rgba(239,68,68,.12);border:1px solid
         rgba(239,68,68,.3);border-radius:8px;padding:9px 12px;font-size:12px;color:var(--red)"></div>
@@ -1662,6 +1686,66 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
     <button class="btn-primary" onclick="openAddUserModal()">＋ Add User</button>
   </div>
 
+  <!-- Admin Security Panel -->
+  <div id="admin-security-panel" style="margin:16px 0;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-weight:700;font-size:14px;color:var(--text)">🔐 Admin Security & Control Panel</div>
+      <button onclick="toggleSecurityPanel()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer">✕</button>
+    </div>
+
+    <!-- Password Policy -->
+    <div style="background:var(--card);border-radius:8px;padding:12px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px">🔑 Password Policy</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:12px;color:var(--muted)">Min length:</label>
+        <input id="policy-min-len" type="number" min="4" max="20" value="6"
+          style="width:60px;padding:4px 8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px"/>
+        <label style="font-size:12px;color:var(--muted)">Session hours:</label>
+        <input id="policy-session-hrs" type="number" min="1" max="24" value="8"
+          style="width:60px;padding:4px 8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px"/>
+        <label style="font-size:12px;color:var(--muted)">Lockout attempts:</label>
+        <input id="policy-lockout" type="number" min="2" max="10" value="4"
+          style="width:60px;padding:4px 8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px"/>
+        <button onclick="saveSecurityPolicy()"
+          style="background:var(--accent);border:none;border-radius:6px;padding:5px 12px;color:#fff;font-size:12px;font-weight:700;cursor:pointer">Save Policy</button>
+      </div>
+    </div>
+
+    <!-- Login History -->
+    <div style="background:var(--card);border-radius:8px;padding:12px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px">📋 Login History (this device)</div>
+      <div id="login-history-list" style="max-height:160px;overflow-y:auto;font-size:11px"></div>
+      <button onclick="clearLoginHistory()"
+        style="margin-top:8px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:4px 10px;color:var(--red);font-size:11px;cursor:pointer">🗑 Clear History</button>
+    </div>
+
+    <!-- Active Sessions / Lockouts -->
+    <div style="background:var(--card);border-radius:8px;padding:12px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px">🔒 Locked Accounts</div>
+      <div id="locked-accounts-list" style="font-size:12px"></div>
+      <button onclick="unlockAllAccounts()"
+        style="margin-top:8px;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.3);border-radius:6px;padding:4px 10px;color:var(--green);font-size:11px;cursor:pointer">🔓 Unlock All</button>
+    </div>
+
+    <!-- Audit Log -->
+    <div style="background:var(--card);border-radius:8px;padding:12px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px">🗒️ Audit Log (last 50 actions)</div>
+      <div id="audit-log-list" style="max-height:200px;overflow-y:auto;font-size:11px"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button onclick="exportAuditLog()"
+          style="background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3);border-radius:6px;padding:4px 10px;color:var(--accent);font-size:11px;cursor:pointer">📥 Export CSV</button>
+        <button onclick="clearAuditLog()"
+          style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:4px 10px;color:var(--red);font-size:11px;cursor:pointer">🗑 Clear Log</button>
+      </div>
+    </div>
+
+    <!-- Module Toggle -->
+    <div style="background:var(--card);border-radius:8px;padding:12px">
+      <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px">📦 Module Access Control</div>
+      <div id="module-toggles" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px"></div>
+    </div>
+  </div>
+
   <!-- Summary KPIs -->
   <div class="kpi-scroll" id="user-kpi-row"></div>
 
@@ -1672,6 +1756,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
     <div class="filter-chip" onclick="filterUsers('tech',this)">🔵 Tech</div>
     <div class="filter-chip" onclick="filterUsers('view',this)">👁 View</div>
     <div class="filter-chip" onclick="filterUsers('inactive',this)">🔒 Inactive</div>
+    <div class="filter-chip admin-only" onclick="toggleSecurityPanel()" style="background:rgba(139,24,64,.15);border-color:rgba(139,24,64,.4);color:#c96a8a">🔐 Security</div>
   </div>
 
   <!-- User cards list -->
@@ -2797,12 +2882,15 @@ function getLockRemaining(username) {
 }
 function recordFailedAttempt(username) {
   if (username === 'admin') return;
+  recordLoginHistory(username, false); // record in history
   const key = getAttemptsKey(username);
   const attempts = parseInt(localStorage.getItem(key) || '0') + 1;
   localStorage.setItem(key, attempts);
-  if (attempts >= 4) {
+  const threshold = policyLockout(); // uses admin-set policy
+  if (attempts >= threshold) {
     localStorage.setItem(getLockoutKey(username), Date.now() + 30 * 60 * 1000);
     localStorage.removeItem(key);
+    addAuditEntry('ACCOUNT_LOCKED', `@${username} locked after ${threshold} failed attempts`);
   }
 }
 function clearFailedAttempts(username) {
@@ -2919,8 +3007,10 @@ function completeLogin(username, user) {
   document.getElementById('login-overlay').classList.add('hidden');
   document.getElementById('user-avatar').textContent = user.name.charAt(0).toUpperCase();
   applyRolePermissions(user.role);
+  // Record login history and audit
+  recordLoginHistory(username, true);
+  addAuditEntry('LOGIN', `@${username} logged in as ${user.role}`);
   initPortal();
-  // Start auto-refresh every 5 minutes
   setTimeout(startAutoRefresh, 3000);
 }
 
@@ -2963,15 +3053,14 @@ function saveNewPassword() {
     }
   }
 
-  if (newPass.length < 6) {
-    errEl.textContent = '❌ New password must be at least 6 characters';
+  if (newPass.length < policyMinLen()) {
+    errEl.textContent = `❌ New password must be at least ${policyMinLen()} characters`;
     errEl.style.display = 'block'; return;
   }
   if (newPass !== confirmPass) {
     errEl.textContent = '❌ Passwords do not match';
     errEl.style.display = 'block'; return;
   }
-  // For forced change: new password must differ from the temp password used to log in
   const currentPass = isForced ? (pendingLoginUser.pass || '') : user.pass;
   if (newPass === currentPass) {
     errEl.textContent = '❌ New password must be different from the current one';
@@ -2982,6 +3071,8 @@ function saveNewPassword() {
   USERS[username].pass       = newPass;
   USERS[username].mustChange = false;
   USERS[username].tempPassword = '';
+  saveUsers(USERS);
+  addAuditEntry('PASSWORD_CHANGED', `@${username} changed password`);
   saveUsers(USERS);
 
   // Sync to Google Sheets — store new password in Temp Password column
@@ -3015,6 +3106,7 @@ function cancelChangePassword() {
 }
 
 function doLogout() {
+  addAuditEntry('LOGOUT', `@${currentUser?.username||'unknown'} logged out`);
   stopAutoRefresh();
   sessionStorage.removeItem('it_user');
   currentUser = null;
@@ -3161,6 +3253,9 @@ function applyRolePermissions(role) {
       lbTech.title = 'Auto-set to your account';
     }
   }
+
+  // Apply disabled modules (admin can turn off any module globally)
+  applyDisabledModules();
 }
 
 function checkSession() {
@@ -3223,6 +3318,14 @@ function initPortal() {
 
 // ── PAGE ROUTER ────────────────────────────────────────────────────────────
 function showPage(name) {
+  // ── Check globally disabled modules (admin can disable any module) ──
+  if (currentUser && currentUser.role !== 'admin') {
+    const disabled = JSON.parse(localStorage.getItem('it_portal_disabled_modules') || '[]');
+    if (disabled.includes(name)) {
+      showToast('🚫 This module is currently disabled by the administrator.');
+      return;
+    }
+  }
   // ── Access control: block denied pages ─────────────────────────────
   if (currentUser && currentUser.role !== 'admin') {
     const denied = currentUser.deny || [];
@@ -3792,25 +3895,166 @@ function renderWOsRaw(wos) {
   document.getElementById('wo-count').textContent = `${wos.length} work order${wos.length!==1?'s':''}`;
   if (!wos.length) { empty.classList.add('show'); return; }
   empty.classList.remove('show');
-  wos.forEach(w => {
+
+  const isAdmin = currentUser && currentUser.role === 'admin';
+
+  wos.forEach((w) => {
     const s = (w.status||'').toLowerCase().replace(/\s+/g,'');
+    // Find real index in allWOs (not filtered idx) — critical for correct edit/delete
+    const realIdx = allWOs.findIndex(x => x.woId === w.woId && x.description === w.description);
     const card = document.createElement('div');
     card.className = 'ticket-card p-medium';
+    card.style.cursor = 'default';
     card.innerHTML = `
       <div class="t-head">
         <span class="ticket-id">${w.woId||'WO'}</span>
-        <span class="badge ${s==='completed'?'resolved':s==='inprogress'?'inprogress':s==='pendingapproval'?'pending':'open'}">${w.status}</span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span class="badge ${s==='completed'?'resolved':s==='inprogress'?'inprogress':s==='pendingapproval'?'pending':'open'}">${w.status}</span>
+          ${isAdmin ? `
+          <button onclick="openWOEditModal(${realIdx < 0 ? 0 : realIdx})" title="Edit WO"
+            style="background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);
+            border-radius:6px;padding:3px 8px;color:var(--accent);font-size:12px;cursor:pointer">✏️</button>
+          <button onclick="deleteWORow(${realIdx < 0 ? 0 : realIdx})" title="Delete WO"
+            style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);
+            border-radius:6px;padding:3px 8px;color:var(--red);font-size:12px;cursor:pointer">🗑</button>
+          ` : ''}
+        </div>
       </div>
       <div class="ticket-title">${w.description}</div>
       <div class="ticket-meta">
         <span class="meta-chip">🏢 ${w.vendorName}</span>
-        <span class="meta-chip">📍 ${w.location}</span>
+        <span class="meta-chip">📍 ${w.location||'—'}</span>
         ${w.invoiceAmt ? `<span class="meta-chip">💰 ₹${Number(w.invoiceAmt).toLocaleString('en-IN')}</span>` : ''}
-        ${w.coordinator ? `<span class="meta-chip">👤 ${w.coordinator.split(' ').slice(0,2).join(' ')}</span>` : ''}
+        ${w.coordinator ? `<span class="meta-chip">👤 ${w.coordinator.split('(')[0].trim()}</span>` : ''}
         ${w.date ? `<span class="meta-chip">📅 ${w.date}</span>` : ''}
+        ${w.remarks ? `<span class="meta-chip">📝 ${w.remarks.substring(0,40)}${w.remarks.length>40?'…':''}</span>` : ''}
       </div>`;
     list.appendChild(card);
   });
+}
+
+// ── WO Edit Modal ─────────────────────────────────────────────────────────
+function openWOEditModal(idx) {
+  const w = (allWOs || [])[idx];
+  if (!w) return;
+  // Store context
+  window._editingWOIdx = idx;
+  // Build modal HTML
+  const fields = [
+    ['WO ID',         'wo-edit-id',          w.woId,        true],
+    ['Date',          'wo-edit-date',         w.date,        false, 'date'],
+    ['Vendor Name',   'wo-edit-vendor',       w.vendorName,  false],
+    ['Contact',       'wo-edit-contact',      w.contact,     false],
+    ['Contract #',    'wo-edit-contract',     w.contract,    false],
+    ['Description',   'wo-edit-desc',         w.description, false],
+    ['Location/Dept', 'wo-edit-location',     w.location,    false],
+    ['Coordinator',   'wo-edit-coordinator',  w.coordinator, false],
+    ['Invoice Amt',   'wo-edit-invoice',      w.invoiceAmt,  false, 'number'],
+    ['Remarks',       'wo-edit-remarks',      w.remarks,     false],
+  ];
+  const statusOptions = ['Pending Approval','In Progress','Completed','Invoice Received','Cancelled'];
+
+  let formHTML = fields.map(([label, id, val, readonly, type='text']) => `
+    <div style="margin-bottom:10px">
+      <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px">${label}</label>
+      <input id="${id}" type="${type}" value="${(val||'').replace(/"/g,'&quot;')}"
+        ${readonly?'readonly style="opacity:.5;background:var(--card)"':''}
+        style="width:100%;padding:8px 10px;background:var(--surface);border:1px solid var(--border);
+        border-radius:8px;color:var(--text);font-size:13px;font-family:var(--font);box-sizing:border-box"/>
+    </div>`).join('');
+
+  formHTML += `
+    <div style="margin-bottom:10px">
+      <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px">Status</label>
+      <select id="wo-edit-status" style="width:100%;padding:8px 10px;background:var(--surface);
+        border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:var(--font)">
+        ${statusOptions.map(s=>`<option value="${s}" ${w.status===s?'selected':''}>${s}</option>`).join('')}
+      </select>
+    </div>`;
+
+  document.getElementById('modal-body').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <span class="ticket-id" style="font-size:14px">${w.woId||'Work Order'}</span>
+      <span style="font-size:11px;color:var(--muted)">Edit Work Order</span>
+    </div>
+    ${formHTML}
+    <button onclick="saveWOEdit(${idx})" class="login-btn" style="margin-top:8px">💾 Save Changes</button>`;
+
+  document.getElementById('ticket-modal').classList.add('open');
+}
+
+async function saveWOEdit(idx) {
+  const w = (allWOs||[])[idx];
+  if (!w) return;
+
+  const vendorName  = document.getElementById('wo-edit-vendor').value.trim();
+  const description = document.getElementById('wo-edit-desc').value.trim();
+  const coordinator = document.getElementById('wo-edit-coordinator').value.trim();
+  const status      = document.getElementById('wo-edit-status').value;
+
+  if (!vendorName || !description) {
+    showToast('⚠️ Vendor name and description are required'); return;
+  }
+
+  // Send Title Case keys matching Google Sheet column headers exactly
+  const sheetData = {
+    action:   'updateRow',
+    sheet:    'VendorWOs',
+    rowIndex: idx + 2,              // +2: 1-based index + header row
+    'Date':            document.getElementById('wo-edit-date').value,
+    'Vendor Name':     vendorName,
+    'Contact':         document.getElementById('wo-edit-contact').value,
+    'Contract #':      document.getElementById('wo-edit-contract').value,
+    'Description':     description,
+    'Location/Dept':   document.getElementById('wo-edit-location').value,
+    'Coordinator':     coordinator,
+    'Invoice Amt':     document.getElementById('wo-edit-invoice').value,
+    'Remarks':         document.getElementById('wo-edit-remarks').value,
+    'Status':          status,
+  };
+
+  if (GS_URL) {
+    try {
+      const data = await gsGet(sheetData);
+      if (!data.success && data.error) {
+        showToast('❌ ' + data.error); return;
+      }
+    } catch(e) {
+      showToast('❌ Network error — changes not saved'); return;
+    }
+  }
+
+  // Update local array
+  allWOs[idx] = {
+    ...w,
+    date: sheetData['Date'], vendorName: sheetData['Vendor Name'],
+    contact: sheetData['Contact'], contract: sheetData['Contract #'],
+    description: sheetData['Description'], location: sheetData['Location/Dept'],
+    coordinator: sheetData['Coordinator'], invoiceAmt: sheetData['Invoice Amt'],
+    remarks: sheetData['Remarks'], status: sheetData['Status'],
+  };
+
+  closeModalDirect();
+  showToast('✅ Work order updated!');
+  renderWOs(allWOs);
+}
+
+async function deleteWORow(idx) {
+  const w = (allWOs||[])[idx];
+  if (!w) return;
+  if (!confirm(`Delete WO ${w.woId||'#'+idx} — ${(w.description||'').substring(0,40)}?\n\nThis cannot be undone.`)) return;
+
+  if (GS_URL) {
+    try {
+      await gsGet({ action:'deleteRow', sheet:'VendorWOs', rowIndex: idx+2 });
+    } catch(e) {
+      showToast('❌ Network error — WO not deleted'); return;
+    }
+  }
+
+  allWOs.splice(idx, 1);
+  showToast('✅ Work order deleted');
+  renderWOs(allWOs);
 }
 
 // ── KPIs ───────────────────────────────────────────────────────────────────
@@ -3943,6 +4187,7 @@ async function submitTicket() {
     const data = await gsGet(payload);
     if (data.success) {
       showToast('✅ Ticket saved to mit data servers!');
+      addAuditEntry('ADD_TICKET', `Ticket saved by @${currentUser?.username} — ${payload.category} / ${payload.priority}`);
       loadAll(); showPage('tickets');
     } else {
       showToast('❌ Error: ' + (data.error || 'Unknown error'));
@@ -3985,6 +4230,7 @@ async function submitWO() {
     const data = await gsGet(payload);
     if (data.success) {
       showToast('✅ Work order saved to mit data servers!');
+      addAuditEntry('ADD_WO', `WO saved by @${currentUser?.username} — ${payload.vendorName}`);
       loadWOs(); showPage('vendors');
     } else {
       showToast('❌ ' + (data.error || 'Save failed'));
@@ -4050,7 +4296,7 @@ async function updateStatus(ticketId, newStatus) {
   }
   try {
     const data = await gsGet({action:'updateStatus', ticketId, status:newStatus});
-    if (data.success){ closeModalDirect(); showToast(`✅ Status updated to ${newStatus}`); loadTickets(); }
+    if (data.success){ closeModalDirect(); addAuditEntry('UPDATE_STATUS', `Ticket ${ticketId} → ${newStatus} by @${currentUser?.username}`); showToast(`✅ Status updated to ${newStatus}`); loadTickets(); }
     else showToast('❌ Update failed: ' + (data.error||''));
   } catch(e){ showToast('❌ Network error – check Sheets URL'); }
 }
@@ -4640,7 +4886,12 @@ async function deleteOneRow(wrapperId, sheetKey, idx) {
   if (!confirm('Delete "' + rowId + '"?\n\nThis cannot be undone.')) return;
   if (!GS_URL) { ctx.rows.splice(idx, 1); renderGenericTable(wrapperId, ctx.rows, ctx.headers, sheetKey); showToast('✅ Deleted (demo mode)'); return; }
   const res = await gsGet({ action:'deleteRow', sheet: SHEET_MAP[sheetKey]||sheetKey, rowIndex: idx+2 }); // +2: 1-based + header
-  if (res.success) { showToast('✅ Row deleted'); ctx.rows.splice(idx, 1); renderGenericTable(wrapperId, ctx.rows, ctx.headers, sheetKey); }
+  if (res.success) {
+    addAuditEntry('DELETE_ROW', `Row deleted from ${sheetKey} by @${currentUser?.username}`);
+    showToast('✅ Row deleted');
+    ctx.rows.splice(idx, 1);
+    renderGenericTable(wrapperId, ctx.rows, ctx.headers, sheetKey);
+  }
   else showToast('❌ Delete failed: ' + (res.error||''));
 }
 
@@ -4659,6 +4910,7 @@ async function deleteSelectedRows(wrapperId, sheetKey) {
     ctx.rows.splice(idx, 1);
   }
   renderGenericTable(wrapperId, ctx.rows, ctx.headers, sheetKey);
+  addAuditEntry('BULK_DELETE', `${indices.length} row(s) deleted from ${sheetKey} by @${currentUser?.username}`);
   showToast('✅ ' + indices.length + ' row(s) deleted');
 }
 
@@ -4717,6 +4969,7 @@ async function saveEditRow(wrapperId, sheetKey, idx) {
   ctx.rows[idx] = updated;
   renderGenericTable(wrapperId, ctx.rows, ctx.headers, sheetKey);
   closeModalDirect();
+  addAuditEntry('EDIT_ROW', `Row edited in ${sheetKey} by @${currentUser?.username}`);
   showToast('✅ Record updated');
 }
 
@@ -4766,7 +5019,7 @@ async function submitStaff() {
   if (!GS_URL) { showToast('⚠️ Connect mit data servers first'); return; }
   try {
     const d = await gsGet(p);
-    if (d.success) { showToast('✅ Staff record saved!'); loadStaff(); toggleStaffForm(); }
+    if (d.success) { addAuditEntry('ADD_STAFF','Staff record added by @'+(currentUser?.username||'?')); showToast('✅ Staff record saved!'); loadStaff(); toggleStaffForm(); }
     else showToast('❌ ' + d.error);
   } catch(e) { showToast('❌ Network error'); }
 }
@@ -4803,7 +5056,7 @@ async function submitVendorReg() {
   if (!GS_URL) { showToast('⚠️ Connect mit data servers first'); return; }
   try {
     const d = await gsGet(p);
-    if (d.success) { showToast('✅ Vendor saved!'); loadVendorReg(); toggleVendorRegForm(); }
+    if (d.success) { addAuditEntry('ADD_VENDORREG','Vendor reg added by @'+(currentUser?.username||'?')); showToast('✅ Vendor saved!'); loadVendorReg(); toggleVendorRegForm(); }
     else showToast('❌ ' + d.error);
   } catch(e) { showToast('❌ Network error'); }
 }
@@ -4840,7 +5093,7 @@ async function submitAsset() {
   if (!GS_URL) { showToast('⚠️ Connect mit data servers first'); return; }
   try {
     const d = await gsGet(p);
-    if (d.success) { showToast('✅ Asset saved!'); loadAssets(); toggleAssetForm(); }
+    if (d.success) { addAuditEntry('ADD_ASSET','Asset added by @'+(currentUser?.username||'?')); showToast('✅ Asset saved!'); loadAssets(); toggleAssetForm(); }
     else showToast('❌ ' + d.error);
   } catch(e) { showToast('❌ Network error'); }
 }
@@ -4874,7 +5127,7 @@ async function submitBudget() {
   if (!GS_URL) { showToast('⚠️ Connect mit data servers first'); return; }
   try {
     const d = await gsGet(p);
-    if (d.success) { showToast('✅ Budget entry saved!'); loadBudget(); toggleBudgetForm(); }
+    if (d.success) { addAuditEntry('ADD_BUDGET','Budget entry added by @'+(currentUser?.username||'?')); showToast('✅ Budget entry saved!'); loadBudget(); toggleBudgetForm(); }
     else showToast('❌ ' + d.error);
   } catch(e) { showToast('❌ Network error'); }
 }
@@ -4906,7 +5159,7 @@ async function submitChallan() {
   if (!GS_URL) { showToast('⚠️ Connect mit data servers first'); return; }
   try {
     const d = await gsGet(p);
-    if (d.success) { showToast('✅ Challan saved!'); loadChallan(); toggleChallanForm(); }
+    if (d.success) { addAuditEntry('ADD_CHALLAN','Challan saved by @'+(currentUser?.username||'?')); showToast('✅ Challan saved!'); loadChallan(); toggleChallanForm(); }
     else showToast('❌ ' + d.error);
   } catch(e) { showToast('❌ Network error'); }
 }
@@ -4940,7 +5193,7 @@ async function submitScrap() {
   if (!GS_URL) { showToast('⚠️ Connect mit data servers first'); return; }
   try {
     const d = await gsGet(p);
-    if (d.success) { showToast('✅ Scrap record saved!'); loadScrap(); toggleScrapForm(); }
+    if (d.success) { addAuditEntry('ADD_SCRAP','Scrap record added by @'+(currentUser?.username||'?')); showToast('✅ Scrap record saved!'); loadScrap(); toggleScrapForm(); }
     else showToast('❌ ' + d.error);
   } catch(e) { showToast('❌ Network error'); }
 }
@@ -4976,7 +5229,7 @@ async function submitHandover() {
   if (!GS_URL) { showToast('⚠️ Connect mit data servers first'); return; }
   try {
     const d = await gsGet(p);
-    if (d.success) { showToast('✅ Handover record saved!'); loadHandover(); toggleHandoverForm(); }
+    if (d.success) { addAuditEntry('ADD_HANDOVER','Handover record added by @'+(currentUser?.username||'?')); showToast('✅ Handover record saved!'); loadHandover(); toggleHandoverForm(); }
     else showToast('❌ ' + d.error);
   } catch(e) { showToast('❌ Network error'); }
 }
@@ -5225,8 +5478,8 @@ function otpSetNewPassword() {
   const errEl   = document.getElementById('otp-err');
   errEl.style.display = 'none';
 
-  if (newPass.length < 6) {
-    errEl.textContent = '❌ Min. 6 characters'; errEl.style.display = 'block'; return;
+  if (newPass.length < policyMinLen()) {
+    errEl.textContent = `❌ Min. ${policyMinLen()} characters`; errEl.style.display = 'block'; return;
   }
   if (newPass !== conf) {
     errEl.textContent = '❌ Passwords do not match'; errEl.style.display = 'block'; return;
@@ -5250,6 +5503,7 @@ function otpSetNewPassword() {
   }
 
   closeOTPOverlay();
+  addAuditEntry('OTP_RESET', `@${otpVerifiedUser} reset password via OTP`);
   showToast('✅ Password reset successfully! Please log in.');
   otpVerifiedUser = null;
 }
@@ -5457,7 +5711,7 @@ async function submitLab() {
   }
   try {
     const d = await gsGet(p);
-    if (d.success) { showToast('✅ Lab saved!'); loadLabs(); toggleLabForm(); }
+    if (d.success) { addAuditEntry('ADD_LAB','Lab record added by @'+(currentUser?.username||'?')); showToast('✅ Lab saved!'); loadLabs(); toggleLabForm(); }
     else showToast('❌ '+d.error);
   } catch(e) { showToast('❌ Network error'); }
 }
@@ -5637,12 +5891,12 @@ async function submitEquip() {
     renderEquipment(visible);
     renderEquipKPIs(visible);
     toggleEquipForm();
-    showToast('✅ Equipment saved!');
+    addAuditEntry('ADD_EQUIPMENT','Equipment added by @'+(currentUser?.username||'?')); showToast('✅ Equipment saved!');
     return;
   }
   try {
     const d = await gsGet(p);
-    if (d.success) { showToast('✅ Equipment saved!'); loadEquipment(); toggleEquipForm(); }
+    if (d.success) { addAuditEntry('ADD_EQUIPMENT','Equipment added by @'+(currentUser?.username||'?')); showToast('✅ Equipment saved!'); loadEquipment(); toggleEquipForm(); }
     else showToast('❌ '+d.error);
   } catch(e) { showToast('❌ Network error'); }
 }
@@ -6258,7 +6512,11 @@ let _allUsers   = {};   // mirror of USERS for the management UI
 
 // ── Load user management page ──────────────────────────────────────────
 async function loadUserManagement() {
-  _allUsers = loadUsers(); // from localStorage / DEFAULT_USERS
+  _allUsers = loadUsers();
+
+  // Show/hide security panel based on role
+  const secPanel = document.getElementById('admin-security-panel');
+  if (secPanel) secPanel.style.display = 'none'; // reset — toggled by button
 
   // If GS connected, sync Users sheet → overwrite local with sheet data
   if (GS_URL) {
@@ -6529,7 +6787,7 @@ async function saveNewUser() {
 
   if (!uname)        { showToast('⚠️ Username is required');          return; }
   if (!name)         { showToast('⚠️ Full name is required');         return; }
-  if (pass.length < 6){ showToast('⚠️ Password must be 6+ characters'); return; }
+  if (pass.length < policyMinLen()){ showToast(`⚠️ Password must be ${policyMinLen()}+ characters`); return; }
   if (_allUsers[uname] && _allUsers[uname].role) {
     showToast('⚠️ Username "@' + uname + '" already exists — choose another'); return;
   }
@@ -6553,6 +6811,7 @@ async function saveNewUser() {
 
   // Update OTP email map in Code.gs via GAS if email provided
   closeUserModalDirect();
+  addAuditEntry('CREATE_USER', `@${uname} role=${role}, email=${email}`);
   showToast('✅ User @' + uname + ' created successfully!');
   loadUserManagement();
 }
@@ -6579,6 +6838,7 @@ async function saveEditUser(uname) {
   }
 
   closeUserModalDirect();
+  addAuditEntry('EDIT_USER', `@${uname} role=${role}, email=${email}, status=${status}`);
   showToast('✅ User @' + uname + ' updated');
   loadUserManagement();
 }
@@ -6587,12 +6847,13 @@ async function saveEditUser(uname) {
 function adminResetPassword(uname) {
   const newPass = prompt(`Set a new temporary password for @${uname}:\n(Min. 6 characters — user will be forced to change on next login)`);
   if (!newPass) return;
-  if (newPass.length < 6) { showToast('⚠️ Password must be at least 6 characters'); return; }
+  if (newPass.length < policyMinLen()) { showToast(`⚠️ Password must be at least ${policyMinLen()} characters`); return; }
 
   _allUsers[uname].pass       = newPass;
   _allUsers[uname].mustChange = true;
   saveUsers(_allUsers);
   USERS = _allUsers;
+  addAuditEntry('RESET_PASSWORD', `Admin reset password for @${uname}`);
 
   if (GS_URL) {
     gsGet({ action:'updateUser', username: uname, tempPassword: newPass, mustChange:'true' });
@@ -6615,6 +6876,7 @@ async function toggleUserStatus(uname) {
 
   if (GS_URL) await gsGet({ action:'updateUser', username: uname, status: newStatus });
 
+  addAuditEntry(newStatus === 'inactive' ? 'DEACTIVATE_USER' : 'ACTIVATE_USER', `@${uname} set to ${newStatus}`);
   showToast(`✅ @${uname} is now ${newStatus}`);
   renderUserKPIs();
   renderUserCards(_userFilter);
@@ -6631,6 +6893,7 @@ async function deleteUser(uname) {
 
   if (GS_URL) await gsGet({ action:'deleteUser', username: uname });
 
+  addAuditEntry('DELETE_USER', `@${uname} permanently deleted`);
   showToast('✅ User @' + uname + ' deleted');
   loadUserManagement();
 }
@@ -6810,6 +7073,334 @@ if ('serviceWorker' in navigator) {
 }
 
 // ════════════════════════════════════════════════════════════
+//  ADMIN SECURITY & CONTROL PANEL
+// ════════════════════════════════════════════════════════════
+
+// ── Security Policy (stored in localStorage) ─────────────────
+const POLICY_KEY = 'it_portal_policy';
+function getPolicy() {
+  try { return JSON.parse(localStorage.getItem(POLICY_KEY) || '{}'); } catch(e) { return {}; }
+}
+function savePolicy(p) { localStorage.setItem(POLICY_KEY, JSON.stringify(p)); }
+// Read policy values (with defaults)
+function policyMinLen()     { return parseInt(getPolicy().minLen     || '6'); }
+function policySessionHrs() { return parseFloat(getPolicy().sessionHrs || '8'); }
+function policyLockout()    { return parseInt(getPolicy().lockout     || '4'); }
+
+// ── Audit Log ─────────────────────────────────────────────────
+const AUDIT_KEY = 'it_portal_audit';
+function getAuditLog() {
+  try { return JSON.parse(localStorage.getItem(AUDIT_KEY) || '[]'); } catch(e) { return []; }
+}
+function addAuditEntry(action, detail) {
+  if (!currentUser) return;
+  const entry = {
+    ts:     new Date().toLocaleString('en-IN'),
+    user:   currentUser.username,
+    role:   currentUser.role,
+    action, detail
+  };
+  // Save locally (fast, always works)
+  const log = getAuditLog();
+  log.unshift(entry);
+  localStorage.setItem(AUDIT_KEY, JSON.stringify(log.slice(0, 200)));
+
+  // Sync critical actions to GAS AuditLog sheet (non-blocking)
+  const CRITICAL = ['LOGIN','LOGOUT','PASSWORD_CHANGED','OTP_RESET','RESET_PASSWORD',
+    'CREATE_USER','EDIT_USER','DELETE_USER','DEACTIVATE_USER','ACTIVATE_USER',
+    'DELETE_ROW','BULK_DELETE','POLICY_CHANGE','MODULE_DISABLED','MODULE_ENABLED',
+    'ACCOUNT_LOCKED','UNLOCK_USER','UNLOCK_ALL'];
+  if (GS_URL && CRITICAL.includes(action)) {
+    gsGet({
+      action: 'writeAudit',
+      ts:     entry.ts,
+      user:   entry.user,
+      role:   entry.role,
+      action: action,
+      detail: detail,
+      device: navigator.userAgent.includes('Mobile') ? 'Mobile' : 'Desktop'
+    }).catch(() => {}); // silent — local log always saved
+  }
+}
+
+// ── Login History ─────────────────────────────────────────────
+const LOGIN_HIST_KEY = 'it_portal_login_history';
+function recordLoginHistory(username, success) {
+  try {
+    const hist = JSON.parse(localStorage.getItem(LOGIN_HIST_KEY) || '[]');
+    hist.unshift({
+      ts:      new Date().toLocaleString('en-IN'),
+      user:    username,
+      status:  success ? '✅ Success' : '❌ Failed',
+      device:  navigator.userAgent.includes('Mobile') ? '📱 Mobile' : '💻 Desktop'
+    });
+    localStorage.setItem(LOGIN_HIST_KEY, JSON.stringify(hist.slice(0, 100)));
+  } catch(e) {}
+}
+
+// ── Toggle Security Panel ─────────────────────────────────────
+function toggleSecurityPanel() {
+  const panel = document.getElementById('admin-security-panel');
+  if (!panel) return;
+  const isVisible = panel.style.display !== 'none';
+  panel.style.display = isVisible ? 'none' : 'block';
+  if (!isVisible) refreshSecurityPanel();
+}
+
+function refreshSecurityPanel() {
+  // Load policy values into inputs
+  const pol = getPolicy();
+  const minEl = document.getElementById('policy-min-len');
+  const sesEl = document.getElementById('policy-session-hrs');
+  const lkEl  = document.getElementById('policy-lockout');
+  if (minEl) minEl.value = pol.minLen     || 6;
+  if (sesEl) sesEl.value = pol.sessionHrs || 8;
+  if (lkEl)  lkEl.value  = pol.lockout    || 4;
+
+  // Render login history
+  const hist = JSON.parse(localStorage.getItem(LOGIN_HIST_KEY) || '[]');
+  const histEl = document.getElementById('login-history-list');
+  if (histEl) {
+    if (!hist.length) {
+      histEl.innerHTML = '<div style="color:var(--muted);padding:4px">No login history recorded yet.</div>';
+    } else {
+      histEl.innerHTML = hist.map(h =>
+        `<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
+          <span style="color:var(--muted);min-width:130px">${h.ts}</span>
+          <span style="font-weight:700;color:var(--text)">@${h.user}</span>
+          <span>${h.status}</span>
+          <span style="color:var(--muted)">${h.device||''}</span>
+        </div>`
+      ).join('');
+    }
+  }
+
+  // Render locked accounts
+  const lockedEl = document.getElementById('locked-accounts-list');
+  if (lockedEl) {
+    USERS = loadUsers();
+    const locked = Object.keys(USERS).filter(u => {
+      const lockUntil = parseInt(localStorage.getItem('lockout_' + u) || '0');
+      return lockUntil > Date.now();
+    });
+    if (!locked.length) {
+      lockedEl.innerHTML = '<span style="color:var(--green)">✅ No locked accounts</span>';
+    } else {
+      lockedEl.innerHTML = locked.map(u => {
+        const until = parseInt(localStorage.getItem('lockout_' + u) || '0');
+        const mins  = Math.ceil((until - Date.now()) / 60000);
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border)">
+          <span>🔒 @${u} — locked ${mins} min remaining</span>
+          <button onclick="unlockUser('${u}')"
+            style="background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);border-radius:5px;
+            padding:2px 8px;color:var(--green);font-size:11px;cursor:pointer">Unlock</button>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Render audit log
+  const auditEl = document.getElementById('audit-log-list');
+  if (auditEl) {
+    const log = getAuditLog();
+    if (!log.length) {
+      auditEl.innerHTML = '<div style="color:var(--muted);padding:4px">No actions logged yet.</div>';
+    } else {
+      auditEl.innerHTML = log.map(e =>
+        `<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap">
+          <span style="color:var(--muted);min-width:130px">${e.ts}</span>
+          <span style="font-weight:700;color:var(--accent)">@${e.user}</span>
+          <span style="color:var(--yellow)">${e.action}</span>
+          <span style="color:var(--muted)">${e.detail||''}</span>
+        </div>`
+      ).join('');
+    }
+  }
+
+  // Render module toggles
+  const modEl = document.getElementById('module-toggles');
+  if (modEl) {
+    const MODULES = [
+      { key:'tickets',    label:'📋 Task Log'       },
+      { key:'vendors',    label:'🔧 Vendor WOs'     },
+      { key:'equipment',  label:'🖥️ Equipment'     },
+      { key:'assets',     label:'📦 Assets'         },
+      { key:'staff',      label:'👥 Staff Register' },
+      { key:'labs',       label:'🏫 Labs Master'    },
+      { key:'budget',     label:'💰 Budget'         },
+      { key:'invoice',    label:'🧾 GST Invoice'    },
+      { key:'challan',    label:'📄 Challan'        },
+      { key:'scrap',      label:'🗑️ Scrap Assets'  },
+      { key:'handover',   label:'🔄 Handover'       },
+      { key:'vendor-reg', label:'🏢 Vendor Register'},
+      { key:'uploads',    label:'📚 Doc Library'   },
+      { key:'search',     label:'🔍 Global Search'  },
+    ];
+    const disabled = JSON.parse(localStorage.getItem('it_portal_disabled_modules') || '[]');
+    modEl.innerHTML = MODULES.map(m => {
+      const isOff = disabled.includes(m.key);
+      return `<div style="display:flex;justify-content:space-between;align-items:center;
+        background:var(--surface);border-radius:6px;padding:4px 8px">
+        <span style="font-size:11px;${isOff?'color:var(--muted);text-decoration:line-through':''}">${m.label}</span>
+        <button onclick="toggleModule('${m.key}')" style="font-size:11px;border:none;border-radius:5px;
+          padding:2px 8px;cursor:pointer;${isOff?
+            'background:rgba(239,68,68,.15);color:var(--red)':
+            'background:rgba(16,185,129,.15);color:var(--green)'}">
+          ${isOff ? 'OFF' : 'ON'}
+        </button>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ── Policy Save ───────────────────────────────────────────────
+function saveSecurityPolicy() {
+  const minLen     = parseInt(document.getElementById('policy-min-len')?.value || '6');
+  const sessionHrs = parseFloat(document.getElementById('policy-session-hrs')?.value || '8');
+  const lockout    = parseInt(document.getElementById('policy-lockout')?.value || '4');
+  if (minLen < 4 || minLen > 20)      { showToast('⚠️ Min length must be 4–20'); return; }
+  if (sessionHrs < 1 || sessionHrs > 24){ showToast('⚠️ Session hours must be 1–24'); return; }
+  if (lockout < 2 || lockout > 10)    { showToast('⚠️ Lockout attempts must be 2–10'); return; }
+  savePolicy({ minLen, sessionHrs, lockout });
+  addAuditEntry('POLICY_CHANGE', `minLen=${minLen}, sessionHrs=${sessionHrs}, lockout=${lockout}`);
+  showToast('✅ Security policy saved');
+}
+
+// ── Unlock specific user ──────────────────────────────────────
+function unlockUser(username) {
+  localStorage.removeItem('lockout_' + username);
+  localStorage.removeItem('attempts_' + username);
+  addAuditEntry('UNLOCK_USER', `@${username} unlocked by admin`);
+  showToast('✅ @' + username + ' unlocked');
+  refreshSecurityPanel();
+}
+
+// ── Unlock all accounts ───────────────────────────────────────
+function unlockAllAccounts() {
+  USERS = loadUsers();
+  Object.keys(USERS).forEach(u => {
+    localStorage.removeItem('lockout_' + u);
+    localStorage.removeItem('attempts_' + u);
+  });
+  addAuditEntry('UNLOCK_ALL', 'All accounts unlocked by admin');
+  showToast('✅ All accounts unlocked');
+  refreshSecurityPanel();
+}
+
+// ── Clear login history ───────────────────────────────────────
+function clearLoginHistory() {
+  if (!confirm('Clear all login history? This cannot be undone.')) return;
+  localStorage.removeItem(LOGIN_HIST_KEY);
+  addAuditEntry('CLEAR_LOGIN_HISTORY', 'Login history cleared');
+  showToast('✅ Login history cleared');
+  refreshSecurityPanel();
+}
+
+// ── Export audit log as CSV ───────────────────────────────────
+function exportAuditLog() {
+  const log = getAuditLog();
+  if (!log.length) { showToast('⚠️ No audit log to export'); return; }
+  const headers = ['Timestamp','User','Role','Action','Detail'];
+  const rows = log.map(e => [e.ts, e.user, e.role, e.action, e.detail||'']);
+  const csv = '\uFEFF' + [headers, ...rows].map(r => r.map(c => '"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv' }));
+  a.download = 'AuditLog_' + new Date().toISOString().split('T')[0] + '.csv';
+  a.click();
+}
+
+// ── Clear audit log ───────────────────────────────────────────
+function clearAuditLog() {
+  if (!confirm('Clear audit log? This cannot be undone.')) return;
+  localStorage.removeItem(AUDIT_KEY);
+  showToast('✅ Audit log cleared');
+  refreshSecurityPanel();
+}
+
+// ── Module toggle (enable/disable for ALL users) ──────────────
+function toggleModule(key) {
+  if (['tickets','vendors'].includes(key)) {
+    showToast('⚠️ Core modules (Task Log, Vendors) cannot be disabled');
+    return;
+  }
+  const disabled = JSON.parse(localStorage.getItem('it_portal_disabled_modules') || '[]');
+  const idx = disabled.indexOf(key);
+  if (idx === -1) {
+    disabled.push(key);
+    addAuditEntry('MODULE_DISABLED', `Module "${key}" disabled by admin`);
+    showToast('🚫 Module "' + key + '" disabled for all users');
+  } else {
+    disabled.splice(idx, 1);
+    addAuditEntry('MODULE_ENABLED', `Module "${key}" enabled by admin`);
+    showToast('✅ Module "' + key + '" enabled');
+  }
+  localStorage.setItem('it_portal_disabled_modules', JSON.stringify(disabled));
+  refreshSecurityPanel();
+  // Re-apply permissions to hide/show nav items
+  if (currentUser) applyRolePermissions(currentUser.role);
+}
+
+// ── Password strength meter ───────────────────────────────────
+function updatePwdStrength(pwd) {
+  const bar   = document.getElementById('pwd-strength-bar');
+  const label = document.getElementById('pwd-strength-label');
+  if (!bar || !label) return;
+
+  let score = 0;
+  if (pwd.length >= policyMinLen())   score++;
+  if (pwd.length >= 8)                score++;
+  if (/[A-Z]/.test(pwd))             score++;
+  if (/[0-9]/.test(pwd))             score++;
+  if (/[^A-Za-z0-9]/.test(pwd))      score++;
+
+  const levels = [
+    { pct:'20%', color:'#ef4444', text:'Very Weak'  },
+    { pct:'40%', color:'#f97316', text:'Weak'        },
+    { pct:'60%', color:'#eab308', text:'Fair'        },
+    { pct:'80%', color:'#22c55e', text:'Strong'      },
+    { pct:'100%',color:'#16a34a', text:'Very Strong' },
+  ];
+  const lv = levels[Math.max(0, score - 1)] || levels[0];
+  bar.style.width     = pwd.length ? lv.pct   : '0%';
+  bar.style.background= pwd.length ? lv.color : '';
+  label.textContent   = pwd.length ? lv.text  : '';
+  label.style.color   = lv.color;
+
+  checkPwdMatch();
+}
+
+function checkPwdMatch() {
+  const np = document.getElementById('cp-new')?.value     || '';
+  const cp = document.getElementById('cp-confirm')?.value || '';
+  const ml = document.getElementById('pwd-match-label');
+  if (!ml || !cp) return;
+  if (np === cp) {
+    ml.textContent = '✅ Passwords match';
+    ml.style.color = '#22c55e';
+  } else {
+    ml.textContent = '❌ Passwords do not match';
+    ml.style.color = '#ef4444';
+  }
+}
+
+function togglePwdVisibility(fieldId, btn) {
+  const field = document.getElementById(fieldId);
+  if (!field) return;
+  const isHidden = field.type === 'password';
+  field.type = isHidden ? 'text' : 'password';
+  btn.textContent = isHidden ? '🙈' : '👁';
+}
+
+// ── Apply disabled modules to nav ────────────────────────────
+function applyDisabledModules() {
+  const disabled = JSON.parse(localStorage.getItem('it_portal_disabled_modules') || '[]');
+  disabled.forEach(key => {
+    // Hide nav buttons and pages for disabled modules
+    document.querySelectorAll(`[data-module="${key}"]`).forEach(el => el.style.display = 'none');
+  });
+}
+
+// ════════════════════════════════════════════════════════════
 //  AUTO-REFRESH VISUAL INDICATOR
 // ════════════════════════════════════════════════════════════
 //  KEYBOARD SHORTCUTS  (admin productivity)
@@ -6843,7 +7434,7 @@ document.addEventListener('keydown', e => {
 //  SESSION EXPIRY WARNING  (after 8 hours)
 // ════════════════════════════════════════════════════════════
 (function() {
-  const SESSION_HOURS = 8;
+  const SESSION_HOURS = policySessionHrs(); // admin-configurable via Security panel
   let _loginTime = parseInt(sessionStorage.getItem('login_time') || '0');
   if (!_loginTime) {
     _loginTime = Date.now();
