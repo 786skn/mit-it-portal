@@ -1114,9 +1114,54 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
   </div>
   <div class="user-info" id="user-info-btn" onclick="toggleLogoutMenu()">
     <div class="user-avatar" id="user-avatar">?</div>
+    <button id="settings-btn" class="topbar-sync admin-only"
+      onclick="event.stopPropagation();showGasSettings()"
+      title="Update GAS / Sheets URL"
+      style="display:none;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);
+      color:var(--accent);font-size:13px;padding:4px 10px;border-radius:20px;margin-right:4px">
+      ⚙️
+    </button>
     <button class="topbar-sync" id="sync-btn" onclick="event.stopPropagation();syncAll()">
       <span class="sync-dot"></span> Sync
     </button>
+  </div>
+</div>
+
+<!-- GAS SETTINGS MODAL (admin only — update URL anytime) -->
+<div id="gas-settings-overlay" onclick="if(event.target===this)closeGasSettings()"
+  style="display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,.7);
+  align-items:center;justify-content:center">
+  <div style="background:var(--surface);border-radius:16px;padding:24px;width:90%;max-width:460px;
+    border:1px solid var(--border)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="font-size:16px;font-weight:700;color:var(--text)">⚙️ Google Sheets URL Settings</div>
+      <button onclick="closeGasSettings()"
+        style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
+      Paste your Google Apps Script <b>/exec</b> deployment URL below.
+      Get it from: <b>GAS → Deploy → Manage deployments → Web app URL → Copy</b>
+    </div>
+    <input id="gas-settings-url" type="url"
+      placeholder="https://script.google.com/macros/s/.../exec"
+      style="width:100%;padding:10px 12px;background:var(--card);border:1px solid var(--border);
+      border-radius:8px;color:var(--text);font-size:12px;font-family:var(--font);
+      box-sizing:border-box;margin-bottom:10px"/>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button onclick="saveGasSettingsUrl()"
+        style="flex:1;padding:10px;background:var(--accent);border:none;border-radius:8px;
+        color:#fff;font-size:13px;font-weight:700;cursor:pointer">💾 Save & Connect</button>
+      <button onclick="testGasSettingsUrl()"
+        style="flex:1;padding:10px;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.3);
+        border-radius:8px;color:var(--green);font-size:13px;font-weight:700;cursor:pointer">🔗 Test URL</button>
+    </div>
+    <div id="gas-settings-result" style="display:none;font-size:11px;padding:8px;
+      border-radius:8px;line-height:1.6"></div>
+    <div style="margin-top:10px;padding:10px;background:var(--card);border-radius:8px;
+      font-size:11px;color:var(--muted)">
+      <b>Current URL:</b><br/>
+      <span id="gas-settings-current" style="word-break:break-all;color:var(--accent)"></span>
+    </div>
   </div>
 </div>
 
@@ -3163,6 +3208,9 @@ function applyRolePermissions(role) {
     const banner = document.getElementById('setup-banner');
     if (banner) banner.style.display = 'none';
   }
+  // Show ⚙️ GAS settings button only for admin
+  const settingsBtn = document.getElementById('settings-btn');
+  if (settingsBtn) settingsBtn.style.display = perms.canChangeUrl ? 'flex' : 'none';
 
   // ── DENY LIST: hide buttons for denied pages ──────────────────────
   const denied = (currentUser && currentUser.deny) ? currentUser.deny : [];
@@ -3380,6 +3428,91 @@ function saveGsUrl() {
   document.getElementById('setup-banner').style.display = 'none';
   showToast('✅ mit data servers connected!');
   loadAll();
+}
+
+// ── GAS SETTINGS MODAL — admin can update URL anytime via ⚙️ button ─────────
+function showGasSettings() {
+  const overlay = document.getElementById('gas-settings-overlay');
+  const input   = document.getElementById('gas-settings-url');
+  const current = document.getElementById('gas-settings-current');
+  if (!overlay) return;
+  if (input)   input.value = GS_URL || '';
+  if (current) current.textContent = GS_URL || '(not set)';
+  document.getElementById('gas-settings-result').style.display = 'none';
+  overlay.style.display = 'flex';
+  setTimeout(() => input?.focus(), 100);
+}
+
+function closeGasSettings() {
+  const o = document.getElementById('gas-settings-overlay');
+  if (o) o.style.display = 'none';
+}
+
+function saveGasSettingsUrl() {
+  const url = (document.getElementById('gas-settings-url')?.value || '').trim();
+  const res = document.getElementById('gas-settings-result');
+  if (!url) {
+    _showRes(res, '⚠️ Please enter a URL', 'rgba(245,158,11,.15)', '#eab308'); return;
+  }
+  if (!url.startsWith('https://script.google.com/macros/s/')) {
+    _showRes(res, '❌ URL must start with https://script.google.com/macros/s/', 'rgba(239,68,68,.12)', 'var(--red)'); return;
+  }
+  if (!url.endsWith('/exec')) {
+    _showRes(res, '❌ URL must end with /exec  (not /dev)', 'rgba(239,68,68,.12)', 'var(--red)'); return;
+  }
+  // Save URL
+  GS_URL = url;
+  localStorage.setItem('gs_url', url);
+  const inp = document.getElementById('gs-url-input');
+  if (inp) inp.value = url;
+  const cur = document.getElementById('gas-settings-current');
+  if (cur) cur.textContent = url;
+  addAuditEntry('GAS_URL_UPDATED', 'GAS URL updated by admin');
+  _showRes(res, '✅ URL saved! Testing connection…', 'rgba(16,185,129,.12)', 'var(--green)');
+  setTimeout(testGasSettingsUrl, 600);
+}
+
+async function testGasSettingsUrl() {
+  const url = (document.getElementById('gas-settings-url')?.value || GS_URL || '').trim();
+  const res = document.getElementById('gas-settings-result');
+  if (!url) { _showRes(res, '⚠️ Enter a URL first', 'rgba(245,158,11,.15)', '#eab308'); return; }
+  _showRes(res, '⏳ Testing connection…', 'rgba(59,130,246,.1)', 'var(--accent)');
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 15000);
+    const r = await fetch(url + '?action=ping', { redirect:'follow', signal: ctrl.signal });
+    clearTimeout(t);
+    const txt = await r.text();
+    if (txt.includes('accounts.google.com') || txt.includes('ServiceLogin')) {
+      _showRes(res, '❌ GAS not deployed as "Anyone"\nRedeploy: Who has access → Anyone (not Google account)', 'rgba(239,68,68,.12)', 'var(--red)'); return;
+    }
+    try {
+      const data = JSON.parse(txt);
+      if (data.status === 'ok') {
+        _showRes(res, '✅ Connected successfully!\nGAS is responding. Refreshing data…', 'rgba(16,185,129,.12)', 'var(--green)');
+        setTimeout(() => { closeGasSettings(); loadAll(); showToast('✅ GAS URL updated & data refreshed!'); }, 1500);
+      } else {
+        _showRes(res, '⚠️ Unexpected: ' + txt.substring(0,100), 'rgba(245,158,11,.15)', '#eab308');
+      }
+    } catch(e) {
+      _showRes(res, '⚠️ Not JSON — check GAS deployment:\n' + txt.substring(0,100), 'rgba(245,158,11,.15)', '#eab308');
+    }
+  } catch(e) {
+    _showRes(res,
+      e.name === 'AbortError'
+        ? '❌ Timed out (15s). Check URL or internet connection.'
+        : '❌ Network error: ' + e.message,
+      'rgba(239,68,68,.12)', 'var(--red)');
+  }
+}
+
+function _showRes(el, msg, bg, color) {
+  if (!el) return;
+  el.style.display = 'block';
+  el.style.background = bg;
+  el.style.color = color;
+  el.style.whiteSpace = 'pre-line';
+  el.textContent = msg;
 }
 
 // ── TEST GS CONNECTION ──────────────────────────────────────────────────────
@@ -7112,13 +7245,13 @@ function addAuditEntry(action, detail) {
     'ACCOUNT_LOCKED','UNLOCK_USER','UNLOCK_ALL'];
   if (GS_URL && CRITICAL.includes(action)) {
     gsGet({
-      action: 'writeAudit',
-      ts:     entry.ts,
-      user:   entry.user,
-      role:   entry.role,
-      action: action,
-      detail: detail,
-      device: navigator.userAgent.includes('Mobile') ? 'Mobile' : 'Desktop'
+      action:      'writeAudit',
+      ts:          entry.ts,
+      user:        entry.user,
+      role:        entry.role,
+      auditAction: action,
+      detail:      detail,
+      device:      navigator.userAgent.includes('Mobile') ? 'Mobile' : 'Desktop'
     }).catch(() => {}); // silent — local log always saved
   }
 }
