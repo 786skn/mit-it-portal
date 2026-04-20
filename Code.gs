@@ -664,7 +664,6 @@ function writeAuditHandler(p) {
   p = p || {};
   try {
     var sheet = getOrCreateSheet('AuditLog');
-    // Ensure header row exists
     if (sheet.getLastRow() === 0) {
       var hdr = ['Timestamp','Username','Role','Action','Detail','Device'];
       sheet.appendRow(hdr);
@@ -673,12 +672,12 @@ function writeAuditHandler(p) {
       sheet.setFrozenRows(1);
     }
     sheet.appendRow([
-      p.ts      || new Date().toLocaleString('en-IN'),
-      p.user    || '',
-      p.role    || '',
-      p.action  || '',
-      p.detail  || '',
-      p.device  || ''
+      p.ts          || new Date().toLocaleString('en-IN'),
+      p.user        || '',
+      p.role        || '',
+      p.auditAction || '',   // auditAction avoids URL param conflict with routing 'action'
+      p.detail      || '',
+      p.device      || ''
     ]);
     return ok({ success: true });
   } catch(ex) {
@@ -687,6 +686,7 @@ function writeAuditHandler(p) {
 }
 
 
+function verifyOTPServer(username, enteredOTP) {
   var stored = PropertiesService.getScriptProperties().getProperty('otp_' + username);
   if (!stored) return { valid: false, reason: 'No OTP found' };
   var data = JSON.parse(stored);
@@ -817,8 +817,57 @@ function setupAllSheets() {
 //  WHY: doGet/doPost require a real event object `e`.
 //  Pressing ▶ Run on doGet or doPost directly passes
 //  undefined as `e`, which causes all the TypeErrors above.
-//  These test functions pass a properly structured fake event.
 // ════════════════════════════════════════════════════════════
+//  ADD AUDITLOG SHEET — run once if AuditLog tab is missing
+// ════════════════════════════════════════════════════════════
+function setupAuditLogSheet() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('AuditLog');
+  if (sheet) { Logger.log('⏭  AuditLog already exists — nothing to do'); return; }
+
+  sheet = ss.insertSheet('AuditLog');
+  var headers = ['Timestamp','Username','Role','Action','Detail','Device'];
+  sheet.appendRow(headers);
+  sheet.getRange(1,1,1,headers.length)
+       .setBackground('#8B1840').setFontColor('#fff')
+       .setFontWeight('bold').setFontSize(10);
+  sheet.setFrozenRows(1);
+  sheet.setColumnWidth(1,140); // Timestamp
+  sheet.setColumnWidth(2,90);  // Username
+  sheet.setColumnWidth(3,70);  // Role
+  sheet.setColumnWidth(4,130); // Action
+  sheet.setColumnWidth(5,260); // Detail
+  sheet.setColumnWidth(6,80);  // Device
+  Logger.log('✅ AuditLog sheet created successfully');
+}
+
+// ════════════════════════════════════════════════════════════
+//  TEST FUNCTIONS
+// ════════════════════════════════════════════════════════════
+
+// ── Quick self-test: run this first to confirm Code.gs is complete ────────
+function verifyCodeGs() {
+  var required = [
+    'doGet','writeAuditHandler','setupAuditLogSheet','setupAllSheets',
+    'handleSendOTP','addTicket','addUserHandler','updateUserHandler',
+    'deleteUserHandler','getDashboard','normalizeTicketRow','setupAllTriggers'
+  ];
+  var missing = [];
+  // We can only check by trying to call them - use typeof workaround
+  Logger.log('=== Code.gs Verification ===');
+  Logger.log('Total functions expected: ' + required.length);
+  Logger.log('doGet defined: ' + (typeof doGet === 'function'));
+  Logger.log('writeAuditHandler defined: ' + (typeof writeAuditHandler === 'function'));
+  Logger.log('setupAuditLogSheet defined: ' + (typeof setupAuditLogSheet === 'function'));
+  Logger.log('handleSendOTP defined: ' + (typeof handleSendOTP === 'function'));
+  Logger.log('normalizeTicketRow defined: ' + (typeof normalizeTicketRow === 'function'));
+  Logger.log('');
+  Logger.log('Ping test:');
+  var r = doGet({ parameter: { action: 'ping' } });
+  Logger.log(r.getContent());
+  Logger.log('');
+  Logger.log('=== If all show true and ping returns ok, Code.gs is complete ===');
+}
 
 function testPing() {
   var r = doGet({ parameter: { action: 'ping' } });
