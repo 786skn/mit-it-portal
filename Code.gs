@@ -119,6 +119,9 @@ function doGet(e) {
     // ── PING ──────────────────────────────────────────────
     if (action === 'ping') return ok({ status: 'ok', success: true, method: 'GET', app: 'MIT-IT-Portal' });
 
+    // ── AUDIT LOG ──────────────────────────────────────────────
+    if (action === 'writeAudit') return writeAuditHandler(p);
+
     // ── READ actions ──────────────────────────────────────
     if (action === 'getTickets')   return ok({ rows: readSheet(SHEETS.tickets).map(normalizeTicketRow) });
     if (action === 'getWOs')       return ok({ rows: readSheet(SHEETS.wos) });
@@ -654,7 +657,36 @@ function handleSendOTP(p) {
   }
 }
 
-function verifyOTPServer(username, enteredOTP) {
+// ════════════════════════════════════════════════════════════
+//  AUDIT LOG HANDLER
+// ════════════════════════════════════════════════════════════
+function writeAuditHandler(p) {
+  p = p || {};
+  try {
+    var sheet = getOrCreateSheet('AuditLog');
+    // Ensure header row exists
+    if (sheet.getLastRow() === 0) {
+      var hdr = ['Timestamp','Username','Role','Action','Detail','Device'];
+      sheet.appendRow(hdr);
+      sheet.getRange(1,1,1,hdr.length)
+        .setBackground('#8B1840').setFontColor('#fff').setFontWeight('bold');
+      sheet.setFrozenRows(1);
+    }
+    sheet.appendRow([
+      p.ts      || new Date().toLocaleString('en-IN'),
+      p.user    || '',
+      p.role    || '',
+      p.action  || '',
+      p.detail  || '',
+      p.device  || ''
+    ]);
+    return ok({ success: true });
+  } catch(ex) {
+    return err('writeAudit failed: ' + ex.message);
+  }
+}
+
+
   var stored = PropertiesService.getScriptProperties().getProperty('otp_' + username);
   if (!stored) return { valid: false, reason: 'No OTP found' };
   var data = JSON.parse(stored);
@@ -733,7 +765,9 @@ function setupAllSheets() {
                 'Extension','Visible To','Uploaded By','File Name','Added At'] },
     { name: 'Users',
       headers: ['Username','Full Name','Role','Email','Deny','Status',
-                'Temp Password','MustChange','Added At','Added By'] }
+                'Temp Password','MustChange','Added At','Added By'] },
+    { name: 'AuditLog',
+      headers: ['Timestamp','Username','Role','Action','Detail','Device'] }
   ];
 
   var ss      = SpreadsheetApp.getActiveSpreadsheet();
