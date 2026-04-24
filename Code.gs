@@ -74,16 +74,16 @@ var SHEETS = {
 
 // ── Email map: username → staff email (update with real addresses) ──
 var USER_EMAILS = {
-  'admin':      'it-admin@mitacsc.ac.in',
-  'rutuj':      'rutuj.deshmukh@mitacsc.ac.in',
-  'sandeep':    'sandeep.muley@mitacsc.ac.in',
-  'mangesh':    'mangesh.sonawane@mitacsc.ac.in',
-  'pankaj':     'pankaj.more@mitacsc.ac.in',
-  'ziyaafshan': 'ziyaafshan.pathan@mitacsc.ac.in',
-  'ashwni':     'ashwni.kadam@mitacsc.ac.in',
-  'bhavik':     'bhavik.shah@mitacsc.ac.in',
-  'director':   'director@mitacsc.ac.in',
-  'registrar':  'registrar@mitacsc.ac.in',
+  'admin':      'sknadaf@mitacsc.ac.in',
+  'rutuj':      'rsdeshmukh@mitacsc.ac.in',
+  'sandeep':    'ssmuley@mitacsc.ac.in',
+  'mangesh':    'mnsonawane@mitacsc.ac.in',
+  'pankaj':     'psmore@mitacsc.ac.in',
+  'ziyaafshan': 'zzpathan@mitacsc.ac.in',
+  'ashwni':     'aakadam@mitacsc.ac.in',
+  'bhavik':     'bhshah@mitacsc.ac.in',
+  'director':   'principal@mitacsc.ac.in',
+  'registrar':  'gjmagar@mitacsc.ac.in',
   'karan':      'nadafshakil.phd@gmail.com'
 };
 
