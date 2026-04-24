@@ -499,7 +499,8 @@ function addTicket(p) {
   var num       = (lastRow > 0) ? lastRow : 1;
   var ticketId  = 'MIT-IT-' + String(num).padStart(3, '0');
   var result    = addToSheet(SHEETS.tickets, ticketRow(p, ticketId));
-  // Auto-send critical alert email
+
+  // ── 1. Critical alert → instant email to admin/management ────
   if ((p.priority || '').toLowerCase() === 'critical') {
     try {
       sendCriticalAlert(ticketId, p.description || '', p.dept || '', p.assignedTo || '');
@@ -507,7 +508,216 @@ function addTicket(p) {
       Logger.log('Critical alert error: ' + ex.message);
     }
   }
+
+  // ── 2. Assignment notification → instant email to assigned tech ─
+  // Sends whenever a ticket is assigned (any priority)
+  try {
+    sendAssignmentNotification(ticketId, p);
+  } catch(ex) {
+    Logger.log('Assignment notification error: ' + ex.message);
+  }
+
   return result;
+}
+
+// ── INSTANT ASSIGNMENT NOTIFICATION EMAIL ─────────────────────
+// Sent to the assigned tech whenever a new ticket is created
+function sendAssignmentNotification(ticketId, p) {
+  p = p || {};
+  var assignedTo = (p.assignedTo || '').trim();
+  var assignedBy = (p.assignedBy || '').trim();
+  if (!assignedTo) return;
+
+  // ── Find TECH email (Assigned To) ────────────────────────────
+  var techEmail = '';
+  var techName  = assignedTo;
+
+  try {
+    var usersSheet = readSheet(SHEETS.users || 'Users');
+    var firstNameLower = assignedTo.split(' ')[0].toLowerCase();
+    usersSheet.forEach(function(row) {
+      var uname = (row['Username'] || '').toLowerCase();
+      var name  = (row['Full Name'] || '').toLowerCase();
+      var email = (row['Email'] || '').trim();
+      if (!email) return;
+      if (name.includes(firstNameLower) || uname === firstNameLower) {
+        techEmail = email;
+        techName  = row['Full Name'] || assignedTo;
+      }
+    });
+  } catch(ex) {
+    Logger.log('Assignment: Users sheet lookup failed: ' + ex.message);
+  }
+
+  // Fallback to USER_EMAILS map
+  if (!techEmail) {
+    var firstNameKey = assignedTo.split(' ')[0].toLowerCase();
+    Object.keys(USER_EMAILS).forEach(function(uname) {
+      if (uname === firstNameKey || firstNameKey.includes(uname)) {
+        techEmail = USER_EMAILS[uname];
+      }
+    });
+  }
+
+  if (!techEmail) {
+    Logger.log('⚠️ Assignment: No email for "' + assignedTo + '" — add in User Management');
+  }
+
+  // ── Find AUTHORITY email (Assigned By) ───────────────────────
+  var authorityEmail = '';
+  var authorityName  = assignedBy || 'Admin';
+
+  if (assignedBy && assignedBy !== 'System Administrator') {
+    // Check Users sheet for authority email
+    try {
+      var sheet2 = readSheet(SHEETS.users || 'Users');
+      var authFirst = assignedBy.split(' ')[0].toLowerCase();
+      sheet2.forEach(function(row) {
+        var uname = (row['Username'] || '').toLowerCase();
+        var name  = (row['Full Name'] || '').toLowerCase();
+        var email = (row['Email'] || '').trim();
+        if (!email) return;
+        if (name.includes(authFirst) || uname === authFirst) {
+          authorityEmail = email;
+          authorityName  = row['Full Name'] || assignedBy;
+        }
+      });
+    } catch(ex) { Logger.log('Authority email lookup failed: ' + ex.message); }
+
+    // Fallback: USER_EMAILS map
+    if (!authorityEmail) {
+      var authKey = assignedBy.split(' ')[0].toLowerCase();
+      Object.keys(USER_EMAILS).forEach(function(uname) {
+        if (uname === authKey || authKey.includes(uname)) {
+          authorityEmail = USER_EMAILS[uname];
+        }
+      });
+    }
+  }
+
+  // Admin always gets notified (from REPORT_RECIPIENTS)
+  var adminEmail = REPORT_RECIPIENTS[0] || FROM_EMAIL;
+
+  var priority = (p.priority    || 'Medium').trim();
+  var dept     = (p.dept        || '—').trim();
+  var category = (p.category    || '—').trim();
+  var desc     = (p.description || '—').trim();
+  var location = (p.location    || '—').trim();
+  var loggedAt = new Date().toLocaleString('en-IN');
+
+  var prioColor = '#2563eb';
+  if (priority.toLowerCase() === 'critical')     prioColor = '#dc2626';
+  else if (priority.toLowerCase() === 'high')    prioColor = '#ea580c';
+  else if (priority.toLowerCase() === 'medium')  prioColor = '#ca8a04';
+  else if (priority.toLowerCase() === 'low')     prioColor = '#16a34a';
+
+  // ── Build HTML email body ─────────────────────────────────────
+  function buildEmailHtml(recipientName, recipientRole) {
+    return [
+      '<div style="font-family:Arial,sans-serif;max-width:600px">',
+      '<div style="background:#1F3864;padding:16px 20px;border-radius:8px 8px 0 0">',
+      '<h2 style="color:#fff;margin:0;font-size:18px">📋 IT Task Assignment — ' + ticketId + '</h2>',
+      '<p style="color:#a5b4fc;margin:4px 0 0;font-size:12px">MIT ACSC – IT Section Portal</p>',
+      '</div>',
+      '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:0 0 8px 8px;padding:20px">',
+      '<p style="font-size:14px;margin:0 0 12px">Dear <b>' + recipientName.split(' ')[0] + '</b>,</p>',
+      recipientRole === 'tech'
+        ? '<p style="font-size:13px;color:#374151;margin:0 0 16px">A new IT support task has been <b>assigned to you</b>. Please review and take action.</p>'
+        : recipientRole === 'authority'
+        ? '<p style="font-size:13px;color:#374151;margin:0 0 16px">An IT task has been logged and <b>assigned by you</b> to <b>' + techName.split('(')[0].trim() + '</b>. This is your confirmation.</p>'
+        : '<p style="font-size:13px;color:#374151;margin:0 0 16px">New IT task has been <b>logged and assigned</b> via the portal.</p>',
+      '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px">',
+      '<tr style="background:#f1f5f9"><td style="padding:8px 10px;color:#6b7280;width:130px;border-bottom:1px solid #e2e8f0"><b>Ticket ID</b></td><td style="padding:8px 10px;font-weight:700;color:#1F3864;border-bottom:1px solid #e2e8f0">' + ticketId + '</td></tr>',
+      '<tr><td style="padding:8px 10px;color:#6b7280;border-bottom:1px solid #e2e8f0">Priority</td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0"><span style="background:' + prioColor + ';color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">' + priority.toUpperCase() + '</span></td></tr>',
+      '<tr style="background:#f1f5f9"><td style="padding:8px 10px;color:#6b7280;border-bottom:1px solid #e2e8f0">Category</td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">' + category + '</td></tr>',
+      '<tr><td style="padding:8px 10px;color:#6b7280;border-bottom:1px solid #e2e8f0">Department</td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">' + dept + '</td></tr>',
+      '<tr style="background:#f1f5f9"><td style="padding:8px 10px;color:#6b7280;border-bottom:1px solid #e2e8f0">Location</td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">' + location + '</td></tr>',
+      '<tr><td style="padding:8px 10px;color:#6b7280;border-bottom:1px solid #e2e8f0">Assigned To</td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0"><b>' + techName.split('(')[0].trim() + '</b></td></tr>',
+      '<tr style="background:#f1f5f9"><td style="padding:8px 10px;color:#6b7280;border-bottom:1px solid #e2e8f0">Assigned By</td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">' + authorityName + '</td></tr>',
+      '<tr><td style="padding:8px 10px;color:#6b7280;border-bottom:1px solid #e2e8f0">Logged At</td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">' + loggedAt + '</td></tr>',
+      '<tr style="background:#f1f5f9"><td style="padding:8px 10px;color:#6b7280;vertical-align:top">Description</td><td style="padding:8px 10px;font-weight:600;color:#1e293b">' + desc + '</td></tr>',
+      '</table>',
+      '<div style="background:#dbeafe;border-left:4px solid #2563eb;padding:10px 14px;border-radius:4px;font-size:12px;color:#1e40af;margin-bottom:16px">',
+      '💡 Log in to the portal to view full details, update status, and add remarks.',
+      '</div>',
+      '<div style="text-align:center;margin-top:8px">',
+      '<a href="https://786skn.github.io/mit-it-portal/" style="background:#1F3864;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;display:inline-block">🔗 Open IT Portal</a>',
+      '</div>',
+      '</div>',
+      '<div style="margin-top:10px;font-size:10px;color:#9ca3af;text-align:center">MIT ACSC IT Section | Alandi, Pune – 412105 | sknadaf@mitacsc.ac.in</div>',
+      '</div>'
+    ].join('');
+  }
+
+  function buildPlainText(recipientName) {
+    return 'Dear ' + recipientName.split(' ')[0] + ',\n\n' +
+      'IT Task Assignment Notification\n' +
+      '================================\n' +
+      'Ticket ID  : ' + ticketId + '\n' +
+      'Priority   : ' + priority + '\n' +
+      'Category   : ' + category + '\n' +
+      'Department : ' + dept + '\n' +
+      'Location   : ' + location + '\n' +
+      'Assigned To: ' + techName.split('(')[0].trim() + '\n' +
+      'Assigned By: ' + authorityName + '\n' +
+      'Description: ' + desc + '\n\n' +
+      'Portal: https://786skn.github.io/mit-it-portal/\n\n' +
+      'MIT ACSC IT Section | Alandi, Pune';
+  }
+
+  var subject = '📋 Task Assigned: ' + ticketId + ' [' + priority + '] – ' + category;
+
+  // ── 1. Email to Assigned To (Tech) ────────────────────────────
+  if (techEmail) {
+    try {
+      MailApp.sendEmail({
+        to:       techEmail,
+        from:     FROM_EMAIL,
+        name:     'MIT ACSC IT Section',
+        subject:  subject,
+        htmlBody: buildEmailHtml(techName, 'tech'),
+        body:     buildPlainText(techName)
+      });
+      Logger.log('✅ Assignment email → Tech: ' + techEmail);
+    } catch(ex) {
+      Logger.log('❌ Failed to send to tech: ' + ex.message);
+    }
+  }
+
+  // ── 2. Email to Assigned By (Authority) ──────────────────────
+  if (authorityEmail && authorityEmail !== techEmail) {
+    try {
+      MailApp.sendEmail({
+        to:       authorityEmail,
+        from:     FROM_EMAIL,
+        name:     'MIT ACSC IT Section',
+        subject:  '📋 Task Confirmation: ' + ticketId + ' assigned to ' + techName.split('(')[0].trim(),
+        htmlBody: buildEmailHtml(authorityName, 'authority'),
+        body:     buildPlainText(authorityName)
+      });
+      Logger.log('✅ Assignment confirmation → Authority: ' + authorityEmail);
+    } catch(ex) {
+      Logger.log('❌ Failed to send to authority: ' + ex.message);
+    }
+  }
+
+  // ── 3. CC Admin (REPORT_RECIPIENTS) ─────────────────────────
+  // Admin gets notified for ALL assignments (not just critical)
+  if (adminEmail && adminEmail !== techEmail && adminEmail !== authorityEmail) {
+    try {
+      MailApp.sendEmail({
+        to:       adminEmail,
+        from:     FROM_EMAIL,
+        name:     'MIT ACSC IT Section',
+        subject:  '[Portal] Task Assigned: ' + ticketId + ' → ' + techName.split('(')[0].trim(),
+        htmlBody: buildEmailHtml('Admin', 'admin'),
+        body:     buildPlainText('Admin')
+      });
+      Logger.log('✅ Assignment copy → Admin: ' + adminEmail);
+    } catch(ex) {
+      Logger.log('❌ Failed to send admin copy: ' + ex.message);
+    }
+  }
 }
 
 function addWO(p) {
@@ -544,10 +754,136 @@ function updateTicketStatus(ticketId, newStatus) {
     if (String(data[i][idCol]).trim() === String(ticketId).trim()) {
       sheet.getRange(i + 1, statusCol + 1).setValue(newStatus);
       SpreadsheetApp.flush();
+
+      // ── Send status update email for key transitions ──────────
+      try {
+        if (['Resolved','Closed','In Progress','Pending Vendor'].indexOf(newStatus) > -1) {
+          var rowData = {};
+          headers.forEach(function(h, idx) { rowData[h] = data[i][idx]; });
+          sendStatusUpdateEmail(ticketId, newStatus, rowData);
+        }
+      } catch(ex) {
+        Logger.log('Status update email failed: ' + ex.message);
+      }
+
       return ok({ success: true, ticketId: ticketId, newStatus: newStatus });
     }
   }
   return err('Ticket not found: ' + ticketId);
+}
+
+// ── Status update notification email ─────────────────────────
+function sendStatusUpdateEmail(ticketId, newStatus, rowData) {
+  rowData = rowData || {};
+  var assignedTo = (rowData['Assigned To'] || '').trim();
+  var assignedBy = (rowData['Assigned By'] || '').trim();
+  var category   = (rowData['Category']    || '—').trim();
+  var priority   = (rowData['Priority']    || '—').trim();
+  var dept       = (rowData['Department']  || '—').trim();
+  var desc       = (rowData['Description'] || '—').trim();
+  var updatedAt  = new Date().toLocaleString('en-IN');
+
+  // Status colour
+  var statusColor = '#2563eb';
+  if (newStatus === 'Resolved' || newStatus === 'Closed') statusColor = '#16a34a';
+  else if (newStatus === 'In Progress')    statusColor = '#7c3aed';
+  else if (newStatus === 'Pending Vendor') statusColor = '#ea580c';
+
+  // Find authority email (Assigned By)
+  var authorityEmail = '';
+  if (assignedBy) {
+    var authFirst = assignedBy.split(' ')[0].toLowerCase();
+    try {
+      readSheet(SHEETS.users || 'Users').forEach(function(row) {
+        var n = (row['Full Name'] || '').toLowerCase();
+        var e = (row['Email'] || '').trim();
+        if (e && n.includes(authFirst)) authorityEmail = e;
+      });
+    } catch(ex) {}
+    if (!authorityEmail) {
+      Object.keys(USER_EMAILS).forEach(function(u) {
+        if (u === authFirst) authorityEmail = USER_EMAILS[u];
+      });
+    }
+  }
+
+  // Find tech email (Assigned To)
+  var techEmailStatus = '';
+  if (assignedTo) {
+    var techFirst = assignedTo.split(' ')[0].toLowerCase();
+    try {
+      readSheet(SHEETS.users || 'Users').forEach(function(row) {
+        var n = (row['Full Name'] || '').toLowerCase();
+        var e = (row['Email'] || '').trim();
+        if (e && n.includes(techFirst)) techEmailStatus = e;
+      });
+    } catch(ex) {}
+    if (!techEmailStatus) {
+      Object.keys(USER_EMAILS).forEach(function(u) {
+        if (u === techFirst) techEmailStatus = USER_EMAILS[u];
+      });
+    }
+  }
+
+  // Admin always notified on Resolved/Closed
+  var adminEmail = REPORT_RECIPIENTS[0] || FROM_EMAIL;
+
+  var subject = '🔄 Ticket ' + ticketId + ' → ' + newStatus + ' | ' + category;
+
+  var html = [
+    '<div style="font-family:Arial,sans-serif;max-width:600px">',
+    '<div style="background:#1F3864;padding:16px 20px;border-radius:8px 8px 0 0">',
+    '<h2 style="color:#fff;margin:0;font-size:18px">🔄 Ticket Status Updated — ' + ticketId + '</h2>',
+    '<p style="color:#a5b4fc;margin:4px 0 0;font-size:12px">MIT ACSC – IT Section Portal</p>',
+    '</div>',
+    '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:0 0 8px 8px;padding:20px">',
+    '<p style="font-size:14px;margin:0 0 12px">Dear Team,</p>',
+    '<p style="font-size:13px;color:#374151;margin:0 0 16px">The status of the following IT ticket has been updated.</p>',
+    '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px">',
+    '<tr style="background:#f1f5f9"><td style="padding:8px 10px;color:#6b7280;width:130px;border-bottom:1px solid #e2e8f0"><b>Ticket ID</b></td><td style="padding:8px 10px;font-weight:700;color:#1F3864;border-bottom:1px solid #e2e8f0">' + ticketId + '</td></tr>',
+    '<tr><td style="padding:8px 10px;color:#6b7280;border-bottom:1px solid #e2e8f0"><b>New Status</b></td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0"><span style="background:' + statusColor + ';color:#fff;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:700">' + newStatus.toUpperCase() + '</span></td></tr>',
+    '<tr style="background:#f1f5f9"><td style="padding:8px 10px;color:#6b7280;border-bottom:1px solid #e2e8f0">Category</td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">' + category + '</td></tr>',
+    '<tr><td style="padding:8px 10px;color:#6b7280;border-bottom:1px solid #e2e8f0">Priority</td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">' + priority + '</td></tr>',
+    '<tr style="background:#f1f5f9"><td style="padding:8px 10px;color:#6b7280;border-bottom:1px solid #e2e8f0">Department</td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">' + dept + '</td></tr>',
+    '<tr><td style="padding:8px 10px;color:#6b7280;border-bottom:1px solid #e2e8f0">Assigned To</td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">' + assignedTo.split('(')[0].trim() + '</td></tr>',
+    '<tr style="background:#f1f5f9"><td style="padding:8px 10px;color:#6b7280;border-bottom:1px solid #e2e8f0">Assigned By</td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">' + assignedBy + '</td></tr>',
+    '<tr><td style="padding:8px 10px;color:#6b7280;border-bottom:1px solid #e2e8f0">Updated At</td><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">' + updatedAt + '</td></tr>',
+    '<tr style="background:#f1f5f9"><td style="padding:8px 10px;color:#6b7280;vertical-align:top">Description</td><td style="padding:8px 10px;color:#1e293b">' + desc + '</td></tr>',
+    '</table>',
+    '<div style="text-align:center;margin-top:8px"><a href="https://786skn.github.io/mit-it-portal/" style="background:#1F3864;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;display:inline-block">🔗 Open IT Portal</a></div>',
+    '</div>',
+    '<div style="margin-top:10px;font-size:10px;color:#9ca3af;text-align:center">MIT ACSC IT Section | Alandi, Pune – 412105 | sknadaf@mitacsc.ac.in</div>',
+    '</div>'
+  ].join('');
+
+  // ── Send to Assigned To (Tech) — for all status changes ─────
+  if (techEmailStatus) {
+    try {
+      MailApp.sendEmail({ to: techEmailStatus, from: FROM_EMAIL, name: 'MIT ACSC IT Section',
+        subject: subject, htmlBody: html,
+        body: 'Ticket ' + ticketId + ' status updated to: ' + newStatus });
+      Logger.log('✅ Status update → Tech: ' + techEmailStatus);
+    } catch(ex) { Logger.log('❌ Status update to tech failed: ' + ex.message); }
+  }
+
+  // ── Send to authority (Assigned By) ─────────────────────────
+  if (authorityEmail && authorityEmail !== techEmailStatus) {
+    try {
+      MailApp.sendEmail({ to: authorityEmail, from: FROM_EMAIL, name: 'MIT ACSC IT Section',
+        subject: subject, htmlBody: html, body: 'Ticket ' + ticketId + ' status → ' + newStatus });
+      Logger.log('✅ Status update → Authority: ' + authorityEmail);
+    } catch(ex) { Logger.log('❌ Status update to authority failed: ' + ex.message); }
+  }
+
+  // ── Send to admin on Resolved/Closed ─────────────────────────
+  if ((newStatus === 'Resolved' || newStatus === 'Closed') &&
+       adminEmail !== authorityEmail && adminEmail !== techEmailStatus) {
+    try {
+      MailApp.sendEmail({ to: adminEmail, from: FROM_EMAIL, name: 'MIT ACSC IT Section',
+        subject: subject, htmlBody: html, body: 'Ticket ' + ticketId + ' status → ' + newStatus });
+      Logger.log('✅ Status update → Admin: ' + adminEmail);
+    } catch(ex) { Logger.log('❌ Status update to admin failed: ' + ex.message); }
+  }
 }
 
 
@@ -1653,17 +1989,75 @@ function setupAllTriggers() {
 
 // ── Test all email functions ──────────────────────────────────────────
 function testAllEmails() {
-  Logger.log('=== Testing all email functions ===');
-  // Test critical alert
-  sendCriticalAlert('MIT-IT-TEST', 'Test critical alert', 'HOD Computer Application', 'System Administrator');
+  Logger.log('=== Testing ALL email notification functions ===');
+  Logger.log('');
+
+  // 1. Assignment notification (Tech + Authority + Admin)
+  Logger.log('--- Test 1: Assignment notification ---');
+  testAssignmentNotification();
+
+  // 2. Critical alert
+  Logger.log('--- Test 2: Critical alert ---');
+  sendCriticalAlert('MIT-IT-TEST', 'TEST: Critical issue — please verify test email', 'HOD Computer Application', 'Rutuj Deshmukh (IT Tech)');
   Logger.log('✅ Critical alert sent');
-  // Test daily report
+
+  // 3. Status update emails
+  Logger.log('--- Test 3: Status update → Resolved ---');
+  testStatusUpdateEmail();
+
+  // 4. Daily report
+  Logger.log('--- Test 4: Daily admin report ---');
   sendDailyReport();
   Logger.log('✅ Daily report sent');
-  // Test weekly report
+
+  // 5. Weekly report
+  Logger.log('--- Test 5: Weekly report ---');
   sendWeeklyReport();
   Logger.log('✅ Weekly report sent');
-  Logger.log('=== Check inbox of: ' + REPORT_RECIPIENTS.join(', ') + ' ===');
+
+  Logger.log('');
+  Logger.log('=== ALL TESTS COMPLETE ===');
+  Logger.log('Check inbox: ' + REPORT_RECIPIENTS.join(', '));
+  Logger.log('Check tech inbox: ' + (USER_EMAILS['rutuj'] || 'rutuj email not set'));
+}
+
+// ── Test assignment notification ──────────────────────────────
+function testAssignmentNotification() {
+  Logger.log('Testing assignment: Tech=Rutuj, Authority=Admin');
+  sendAssignmentNotification('MIT-IT-TEST', {
+    assignedTo:  'Rutuj Deshmukh (IT Tech)',
+    assignedBy:  'System Administrator',
+    priority:    'High',
+    category:    'Network / Connectivity',
+    dept:        'HOD Computer Application',
+    location:    'Lab 3',
+    description: 'TEST: LAN cable issue — please verify this is a test email'
+  });
+  Logger.log('✅ Assignment test done. Tech: ' + (USER_EMAILS['rutuj'] || 'No email') + ' | Admin: ' + (REPORT_RECIPIENTS[0] || 'No admin email'));
+}
+
+// ── Test status update email ──────────────────────────────────
+function testStatusUpdateEmail() {
+  Logger.log('Testing status update → Resolved');
+  sendStatusUpdateEmail('MIT-IT-TEST', 'Resolved', {
+    'Assigned To': 'Rutuj Deshmukh (IT Tech)',
+    'Assigned By': 'System Administrator',
+    'Category':    'Network / Connectivity',
+    'Priority':    'High',
+    'Department':  'HOD Computer Application',
+    'Description': 'TEST: LAN cable issue — status update test'
+  });
+  Logger.log('✅ Status update test done');
+  Logger.log('Testing status update → In Progress');
+  sendStatusUpdateEmail('MIT-IT-TEST', 'In Progress', {
+    'Assigned To': 'Rutuj Deshmukh (IT Tech)',
+    'Assigned By': 'System Administrator',
+    'Category':    'Printer Issue',
+    'Priority':    'Medium',
+    'Department':  'Admin Office',
+    'Description': 'TEST: Printer not working — in progress test'
+  });
+  Logger.log('✅ In Progress status test done');
 }
 
 
