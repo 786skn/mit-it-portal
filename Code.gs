@@ -69,7 +69,8 @@ var SHEETS = {
   handover:  'Handover',
   labs:      'Labs',
   equipment: 'Equipment',
-  docs:      'Docs'
+  docs:      'Docs',
+  users:     'Users'
 };
 
 // ── Email map: username → staff email (update with real addresses) ──
@@ -85,6 +86,29 @@ var USER_EMAILS = {
   'director':   'principal@mitacsc.ac.in',
   'registrar':  'gjmagar@mitacsc.ac.in',
   'karan':      'nadafshakil.phd@gmail.com'
+};
+
+// ── Authority email map (Assigned By positions in ticket form) ─────────────
+// Maps the EXACT display names from the f-assignedby dropdown to email addresses
+// UPDATE these with real institutional email addresses
+var AUTHORITY_EMAILS = {
+  'System Administrator':                    'sknadaf@mitacsc.ac.in',
+  'Director':                                'director@mitacsc.ac.in',
+  'Deputy Director - Academics & Research':  'deputy.director@mitacsc.ac.in',
+  'Registrar':                               'registrar@mitacsc.ac.in',
+  'Chief Administrative Officer':            'cao@mitacsc.ac.in',
+  'Dean - School of Computer Science':       'dean.cs@mitacsc.ac.in',
+  'Dean - Commerce & Management':            'dean.cm@mitacsc.ac.in',
+  'Dean - Quality Assurance':                'dean.qa@mitacsc.ac.in',
+  'Dean - Training & Placement':             'dean.tp@mitacsc.ac.in',
+  'Dean - Research & Development':           'dean.rd@mitacsc.ac.in',
+  'HOD Computer Application':                'hod.ca@mitacsc.ac.in',
+  'HOD Arts & Commerce':                     'hod.ac@mitacsc.ac.in',
+  'HOD Science & Computer Science':          'hod.scs@mitacsc.ac.in',
+  'HOD Mathematics':                         'hod.maths@mitacsc.ac.in',
+  'HOD Design, Analytics & Cyber Security':  'hod.dacs@mitacsc.ac.in',
+  'HOD Business Administration':             'hod.ba@mitacsc.ac.in',
+  'Associate Dean - Student Affairs':        'dean.sa@mitacsc.ac.in'
 };
 
 
@@ -567,31 +591,46 @@ function sendAssignmentNotification(ticketId, p) {
   var authorityEmail = '';
   var authorityName  = assignedBy || 'Admin';
 
-  if (assignedBy && assignedBy !== 'System Administrator') {
-    // Check Users sheet for authority email
-    try {
-      var sheet2 = readSheet(SHEETS.users || 'Users');
-      var authFirst = assignedBy.split(' ')[0].toLowerCase();
-      sheet2.forEach(function(row) {
-        var uname = (row['Username'] || '').toLowerCase();
-        var name  = (row['Full Name'] || '').toLowerCase();
-        var email = (row['Email'] || '').trim();
-        if (!email) return;
-        if (name.includes(authFirst) || uname === authFirst) {
-          authorityEmail = email;
-          authorityName  = row['Full Name'] || assignedBy;
-        }
-      });
-    } catch(ex) { Logger.log('Authority email lookup failed: ' + ex.message); }
+  if (assignedBy) {
+    // 1. Check AUTHORITY_EMAILS map first (exact match on display name)
+    if (AUTHORITY_EMAILS[assignedBy]) {
+      authorityEmail = AUTHORITY_EMAILS[assignedBy];
+      Logger.log('Authority email from AUTHORITY_EMAILS: ' + authorityEmail);
+    }
 
-    // Fallback: USER_EMAILS map
+    // 2. Check Users sheet (for portal-registered users like director, registrar)
+    if (!authorityEmail) {
+      try {
+        var authFirst = assignedBy.split(' ')[0].toLowerCase();
+        readSheet(SHEETS.users).forEach(function(row) {
+          var uname = (row['Username'] || '').toLowerCase();
+          var name  = (row['Full Name'] || '').toLowerCase();
+          var email = (row['Email'] || '').trim();
+          if (!email) return;
+          if (name.includes(authFirst) || uname === authFirst ||
+              assignedBy.toLowerCase().includes(uname)) {
+            authorityEmail = email;
+            authorityName  = row['Full Name'] || assignedBy;
+          }
+        });
+      } catch(ex) {
+        Logger.log('Authority Users sheet lookup failed: ' + ex.message);
+      }
+    }
+
+    // 3. Fallback: USER_EMAILS map (username-based)
     if (!authorityEmail) {
       var authKey = assignedBy.split(' ')[0].toLowerCase();
       Object.keys(USER_EMAILS).forEach(function(uname) {
-        if (uname === authKey || authKey.includes(uname)) {
+        if (uname === authKey || assignedBy.toLowerCase().includes(uname)) {
           authorityEmail = USER_EMAILS[uname];
         }
       });
+    }
+
+    if (!authorityEmail) {
+      Logger.log('⚠️ No email found for authority: "' + assignedBy +
+        '" — update AUTHORITY_EMAILS map in Code.gs or add in User Management');
     }
   }
 
@@ -789,20 +828,30 @@ function sendStatusUpdateEmail(ticketId, newStatus, rowData) {
   else if (newStatus === 'In Progress')    statusColor = '#7c3aed';
   else if (newStatus === 'Pending Vendor') statusColor = '#ea580c';
 
-  // Find authority email (Assigned By)
+  // Find authority email (Assigned By) — check AUTHORITY_EMAILS first
   var authorityEmail = '';
   if (assignedBy) {
-    var authFirst = assignedBy.split(' ')[0].toLowerCase();
-    try {
-      readSheet(SHEETS.users || 'Users').forEach(function(row) {
-        var n = (row['Full Name'] || '').toLowerCase();
-        var e = (row['Email'] || '').trim();
-        if (e && n.includes(authFirst)) authorityEmail = e;
-      });
-    } catch(ex) {}
+    // 1. AUTHORITY_EMAILS map (exact match)
+    if (AUTHORITY_EMAILS[assignedBy]) {
+      authorityEmail = AUTHORITY_EMAILS[assignedBy];
+    }
+    // 2. Users sheet
     if (!authorityEmail) {
+      var authFirst = assignedBy.split(' ')[0].toLowerCase();
+      try {
+        readSheet(SHEETS.users).forEach(function(row) {
+          var n = (row['Full Name'] || '').toLowerCase();
+          var e = (row['Email'] || '').trim();
+          if (e && (n.includes(authFirst) || assignedBy.toLowerCase().includes((row['Username']||'').toLowerCase())))
+            authorityEmail = e;
+        });
+      } catch(ex) {}
+    }
+    // 3. USER_EMAILS fallback
+    if (!authorityEmail) {
+      var authKey = assignedBy.split(' ')[0].toLowerCase();
       Object.keys(USER_EMAILS).forEach(function(u) {
-        if (u === authFirst) authorityEmail = USER_EMAILS[u];
+        if (u === authKey) authorityEmail = USER_EMAILS[u];
       });
     }
   }
