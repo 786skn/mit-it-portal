@@ -100,7 +100,7 @@ var AUTHORITY_EMAILS = {
   'Dean - School of Computer Science':       'dean.cs@mitacsc.ac.in',
   'Dean - Commerce & Management':            'dean.cm@mitacsc.ac.in',
   'Dean - Quality Assurance':                'dean.qa@mitacsc.ac.in',
-  'Dean - Training & Placement':             'dean.tp@mitacsc.ac.in',
+  'Dean - Training & Placement':             'placement@mitacsc.ac.in',
   'Dean - Research & Development':           'dean.rd@mitacsc.ac.in',
   'HOD Computer Application':                'hod.ca@mitacsc.ac.in',
   'HOD Arts & Commerce':                     'hod.ac@mitacsc.ac.in',
