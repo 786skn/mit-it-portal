@@ -3885,7 +3885,7 @@ async function syncAll() {
       return;
     }
 
-    showToast('✅ Sheets connected! Refreshing data…');
+    showToast('✅ server connected! Refreshing data…');
     loadAll();
   } catch(e) {
     showToast('❌ Cannot reach Sheets: ' + e.message.substring(0, 60));
