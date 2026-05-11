@@ -85,7 +85,7 @@ var USER_EMAILS = {
   'bhavik':     'bhshah@mitacsc.ac.in',
   'director':   'principal@mitacsc.ac.in',
   'registrar':  'gjmagar@mitacsc.ac.in',
-  'karan':      'karanrautrao07@gmail.com',
+  'karan':      'karanrautrao07@gmail.com'
 };
 
 // ── Authority email map (Assigned By positions in ticket form) ─────────────
