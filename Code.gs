@@ -75,17 +75,17 @@ var SHEETS = {
 
 // ── Email map: username → staff email (update with real addresses) ──
 var USER_EMAILS = {
-  'admin':      'sknadaf@mitacsc.ac.in',
-  'rutuj':      'rsdeshmukh@mitacsc.ac.in',
-  'sandeep':    'ssmuley@mitacsc.ac.in',
-  'mangesh':    'mnsonawane@mitacsc.ac.in',
-  'pankaj':     'psmore@mitacsc.ac.in',
-  'ziyaafshan': 'zzpathan@mitacsc.ac.in',
-  'ashwni':     'aakadam@mitacsc.ac.in',
-  'bhavik':     'bhshah@mitacsc.ac.in',
-  'director':   'principal@mitacsc.ac.in',
-  'registrar':  'gjmagar@mitacsc.ac.in',
-  'karan':      'karanrautrao07@gmail.com'
+   'admin':      'sknadaf@mitacsc.ac.in',        // ✅ correct
+  'rutuj':      'rsdeshmukh@mitacsc.ac.in',      // ← update if different
+  'sandeep':    'ssmuley@mitacsc.ac.in',         // ← update if different
+  'mangesh':    'mnsonawane@mitacsc.ac.in',      // ← update if different
+  'pankaj':     'psmore@mitacsc.ac.in',          // ← update if different
+  'ziyaafshan': 'zzpathan@mitacsc.ac.in',        // ← update if different
+  'ashwni':     'aakadam@mitacsc.ac.in',         // ← update if different
+  'bhavik':     'bhshah@mitacsc.ac.in',          // ← update if different
+  'director':   '@mitacsc.ac.in',       // ← update if different
+  'registrar':  '@mitacsc.ac.in',         // ← update if different
+  'karan':      'karanrautrao07@gmail.com'       // ✅ correct
 };
 
 // ── Authority email map (Assigned By positions in ticket form) ─────────────
@@ -93,14 +93,14 @@ var USER_EMAILS = {
 // UPDATE these with real institutional email addresses
 var AUTHORITY_EMAILS = {
   'System Administrator':                    'sknadaf@mitacsc.ac.in',
-  'Director':                                'director@mitacsc.ac.in',
-  'Deputy Director - Academics & Research':  'deputy.director@mitacsc.ac.in',
-  'Registrar':                               'registrar@mitacsc.ac.in',
+  'Director':                                '@mitacsc.ac.in',
+  'Deputy Director - Academics & Research':  '@mitacsc.ac.in',
+  'Registrar':                               '@mitacsc.ac.in',
   'Chief Administrative Officer':            'cao@mitacsc.ac.in',
   'Dean - School of Computer Science':       'dean.cs@mitacsc.ac.in',
   'Dean - Commerce & Management':            'dean.cm@mitacsc.ac.in',
   'Dean - Quality Assurance':                'dean.qa@mitacsc.ac.in',
-  'Dean - Training & Placement':             'placement@mitacsc.ac.in',
+  'Dean - Training & Placement':             'dean.tp@mitacsc.ac.in',
   'Dean - Research & Development':           'dean.rd@mitacsc.ac.in',
   'HOD Computer Application':                'hod.ca@mitacsc.ac.in',
   'HOD Arts & Commerce':                     'hod.ac@mitacsc.ac.in',
@@ -111,10 +111,43 @@ var AUTHORITY_EMAILS = {
   'Associate Dean - Student Affairs':        'dean.sa@mitacsc.ac.in'
 };
 
+// ── Email configuration — declared at TOP so all functions can use them ────
+// FROM_EMAIL: must be the Gmail address of the Google account running this script
+var FROM_EMAIL = 'sknadaf@mitacsc.ac.in';
 
-// ════════════════════════════════════════════════════════════
-//  RESPONSE HELPERS
-// ════════════════════════════════════════════════════════════
+// REPORT_RECIPIENTS: admin emails that receive daily reports and critical alerts
+var REPORT_RECIPIENTS = [
+  'sknadaf@mitacsc.ac.in',
+  'it-admin@mitacsc.ac.in'
+];
+
+// ── TEST MODE — set to true to redirect ALL emails to admin only ──────────
+// When TEST_MODE = true:
+//   • No emails sent to tech users, HODs, or any non-admin address
+//   • All emails (assignment, status update, reminders) go to admin inbox only
+//   • Each email shows "[TEST MODE]" prefix and the original intended recipient
+//   • Safe to test the full email system without contacting any real users
+// When TEST_MODE = false (default / production):
+//   • Emails sent to actual recipients as designed
+var TEST_MODE = false;  // ← change to true to stop emails to non-admin users
+
+// Helper: returns admin email if TEST_MODE on, otherwise returns the real recipient
+function resolveEmail(intendedEmail, label) {
+  if (!intendedEmail) return '';
+  if (TEST_MODE) {
+    Logger.log('[TEST MODE] Redirecting "' + label + '" (' + intendedEmail + ') → admin');
+    return REPORT_RECIPIENTS[0] || FROM_EMAIL;
+  }
+  return intendedEmail;
+}
+
+// Helper: returns subject with [TEST MODE] prefix and original recipient appended
+function resolveSubject(subject, intendedEmail) {
+  if (TEST_MODE) return '[TEST MODE → ' + intendedEmail + '] ' + subject;
+  return subject;
+}
+
+
 
 function makeResponse(data) {
   return ContentService
@@ -556,15 +589,32 @@ function sendAssignmentNotification(ticketId, p) {
   var techEmail = '';
   var techName  = assignedTo;
 
+  // ── Find tech email — USER_EMAILS map FIRST (always up-to-date),
+  //    then Users sheet (may have stale cached data) ─────────────
+  var firstNameKey = assignedTo.split(' ')[0].toLowerCase();
+
+  // 1. USER_EMAILS map — highest priority, always reflects Code.gs values
+  Object.keys(USER_EMAILS).forEach(function(uname) {
+    if (uname === firstNameKey || firstNameKey.includes(uname)) {
+      techEmail = USER_EMAILS[uname];
+      Logger.log('Tech email from USER_EMAILS map: ' + techEmail);
+    }
+  });
+
+  // 2. Users sheet — may override if admin updated email via User Management
+  //    Only use if sheet email differs (prefer User Management updates)
   try {
-    var usersSheet = readSheet(SHEETS.users || 'Users');
-    var firstNameLower = assignedTo.split(' ')[0].toLowerCase();
+    var usersSheet = readSheet(SHEETS.users);
     usersSheet.forEach(function(row) {
       var uname = (row['Username'] || '').toLowerCase();
       var name  = (row['Full Name'] || '').toLowerCase();
       var email = (row['Email'] || '').trim();
       if (!email) return;
-      if (name.includes(firstNameLower) || uname === firstNameLower) {
+      if (name.includes(firstNameKey) || uname === firstNameKey) {
+        // Users sheet has an email — use it (admin may have updated via User Mgmt)
+        if (email !== techEmail) {
+          Logger.log('Tech email updated from Users sheet: ' + email + ' (was: ' + techEmail + ')');
+        }
         techEmail = email;
         techName  = row['Full Name'] || assignedTo;
       }
@@ -573,18 +623,8 @@ function sendAssignmentNotification(ticketId, p) {
     Logger.log('Assignment: Users sheet lookup failed: ' + ex.message);
   }
 
-  // Fallback to USER_EMAILS map
   if (!techEmail) {
-    var firstNameKey = assignedTo.split(' ')[0].toLowerCase();
-    Object.keys(USER_EMAILS).forEach(function(uname) {
-      if (uname === firstNameKey || firstNameKey.includes(uname)) {
-        techEmail = USER_EMAILS[uname];
-      }
-    });
-  }
-
-  if (!techEmail) {
-    Logger.log('⚠️ Assignment: No email for "' + assignedTo + '" — add in User Management');
+    Logger.log('⚠️ No email for "' + assignedTo + '" — add in User Management or USER_EMAILS map');
   }
 
   // ── Find AUTHORITY email (Assigned By) ───────────────────────
@@ -710,7 +750,7 @@ function sendAssignmentNotification(ticketId, p) {
   if (techEmail) {
     try {
       MailApp.sendEmail({
-        to:       techEmail,
+        to:       resolveEmail(techEmail, 'Tech: '+techName),
         from:     FROM_EMAIL,
         name:     'MIT ACSC IT Section',
         subject:  subject,
@@ -727,7 +767,7 @@ function sendAssignmentNotification(ticketId, p) {
   if (authorityEmail && authorityEmail !== techEmail) {
     try {
       MailApp.sendEmail({
-        to:       authorityEmail,
+        to:       resolveEmail(authorityEmail, 'Authority: '+authorityName),
         from:     FROM_EMAIL,
         name:     'MIT ACSC IT Section',
         subject:  '📋 Task Confirmation: ' + ticketId + ' assigned to ' + techName.split('(')[0].trim(),
@@ -745,7 +785,7 @@ function sendAssignmentNotification(ticketId, p) {
   if (adminEmail && adminEmail !== techEmail && adminEmail !== authorityEmail) {
     try {
       MailApp.sendEmail({
-        to:       adminEmail,
+        to:       resolveEmail(adminEmail, 'Admin CC'),
         from:     FROM_EMAIL,
         name:     'MIT ACSC IT Section',
         subject:  '[Portal] Task Assigned: ' + ticketId + ' → ' + techName.split('(')[0].trim(),
@@ -908,7 +948,7 @@ function sendStatusUpdateEmail(ticketId, newStatus, rowData) {
   // ── Send to Assigned To (Tech) — for all status changes ─────
   if (techEmailStatus) {
     try {
-      MailApp.sendEmail({ to: techEmailStatus, from: FROM_EMAIL, name: 'MIT ACSC IT Section',
+      MailApp.sendEmail({ to: resolveEmail(techEmailStatus, 'Tech: '+assignedTo), from: FROM_EMAIL, name: 'MIT ACSC IT Section',
         subject: subject, htmlBody: html,
         body: 'Ticket ' + ticketId + ' status updated to: ' + newStatus });
       Logger.log('✅ Status update → Tech: ' + techEmailStatus);
@@ -918,8 +958,8 @@ function sendStatusUpdateEmail(ticketId, newStatus, rowData) {
   // ── Send to authority (Assigned By) ─────────────────────────
   if (authorityEmail && authorityEmail !== techEmailStatus) {
     try {
-      MailApp.sendEmail({ to: authorityEmail, from: FROM_EMAIL, name: 'MIT ACSC IT Section',
-        subject: subject, htmlBody: html, body: 'Ticket ' + ticketId + ' status → ' + newStatus });
+      MailApp.sendEmail({ to: resolveEmail(authorityEmail, 'Authority: '+assignedBy), from: FROM_EMAIL, name: 'MIT ACSC IT Section',
+        subject: resolveSubject(subject, authorityEmail), htmlBody: html, body: 'Ticket ' + ticketId + ' status → ' + newStatus });
       Logger.log('✅ Status update → Authority: ' + authorityEmail);
     } catch(ex) { Logger.log('❌ Status update to authority failed: ' + ex.message); }
   }
@@ -928,8 +968,8 @@ function sendStatusUpdateEmail(ticketId, newStatus, rowData) {
   if ((newStatus === 'Resolved' || newStatus === 'Closed') &&
        adminEmail !== authorityEmail && adminEmail !== techEmailStatus) {
     try {
-      MailApp.sendEmail({ to: adminEmail, from: FROM_EMAIL, name: 'MIT ACSC IT Section',
-        subject: subject, htmlBody: html, body: 'Ticket ' + ticketId + ' status → ' + newStatus });
+      MailApp.sendEmail({ to: resolveEmail(adminEmail, 'Admin'), from: FROM_EMAIL, name: 'MIT ACSC IT Section',
+        subject: resolveSubject(subject, adminEmail), htmlBody: html, body: 'Ticket ' + ticketId + ' status → ' + newStatus });
       Logger.log('✅ Status update → Admin: ' + adminEmail);
     } catch(ex) { Logger.log('❌ Status update to admin failed: ' + ex.message); }
   }
@@ -1008,10 +1048,10 @@ function handleSendOTP(p) {
 
   try {
     MailApp.sendEmail({
-      to:      email,
+      to:      resolveEmail(email, 'OTP for @'+username),
       from:    FROM_EMAIL,
       name:    'MIT ACSC IT Section',
-      subject: 'MIT ACSC IT Portal \u2013 Password Reset OTP',
+      subject: resolveSubject('MIT ACSC IT Portal \u2013 Password Reset OTP', email),
       htmlBody: [
         '<div style="font-family:Arial,sans-serif;max-width:500px">',
         '<div style="background:#8B1840;padding:16px 20px;border-radius:8px 8px 0 0">',
@@ -1230,29 +1270,133 @@ function setupAuditLogSheet() {
 //  TEST FUNCTIONS
 // ════════════════════════════════════════════════════════════
 
-// ── Quick self-test: run this first to confirm Code.gs is complete ────────
-function verifyCodeGs() {
-  var required = [
-    'doGet','writeAuditHandler','setupAuditLogSheet','setupAllSheets',
-    'handleSendOTP','addTicket','addUserHandler','updateUserHandler',
-    'deleteUserHandler','getDashboard','normalizeTicketRow','setupAllTriggers'
-  ];
-  var missing = [];
-  // We can only check by trying to call them - use typeof workaround
-  Logger.log('=== Code.gs Verification ===');
-  Logger.log('Total functions expected: ' + required.length);
-  Logger.log('doGet defined: ' + (typeof doGet === 'function'));
-  Logger.log('writeAuditHandler defined: ' + (typeof writeAuditHandler === 'function'));
-  Logger.log('setupAuditLogSheet defined: ' + (typeof setupAuditLogSheet === 'function'));
-  Logger.log('handleSendOTP defined: ' + (typeof handleSendOTP === 'function'));
-  Logger.log('normalizeTicketRow defined: ' + (typeof normalizeTicketRow === 'function'));
-  Logger.log('');
-  Logger.log('Ping test:');
-  var r = doGet({ parameter: { action: 'ping' } });
-  Logger.log(r.getContent());
-  Logger.log('');
-  Logger.log('=== If all show true and ping returns ok, Code.gs is complete ===');
+// ── One-time fix: update Karan email in Users sheet ──────────
+// Run this ONCE from GAS editor → select fixKaranEmail → ▶ Run
+function fixKaranEmail() {
+  var NEW_EMAIL = 'karanrautrao07@gmail.com';
+  var USERNAME  = 'karan';
+
+  try {
+    var sheet   = getOrCreateSheet(SHEETS.users);
+    var data    = sheet.getDataRange().getValues();
+    var headers = data[0].map(function(h){ return String(h).trim(); });
+    var unameCol = headers.indexOf('Username');
+    var emailCol = headers.indexOf('Email');
+
+    if (unameCol < 0) { Logger.log('❌ Username column not found'); return; }
+    if (emailCol < 0) { Logger.log('❌ Email column not found'); return; }
+
+    var found = false;
+    for (var i = 1; i < data.length; i++) {
+      if ((String(data[i][unameCol])||'').toLowerCase().trim() === USERNAME) {
+        var oldEmail = data[i][emailCol];
+        sheet.getRange(i+1, emailCol+1).setValue(NEW_EMAIL);
+        SpreadsheetApp.flush();
+        Logger.log('✅ Karan email updated in Users sheet');
+        Logger.log('   Was: ' + (oldEmail || '(empty)'));
+        Logger.log('   Now: ' + NEW_EMAIL);
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      Logger.log('⚠️ @karan not found in Users sheet. Existing usernames:');
+      for (var j = 1; j < data.length; j++) {
+        Logger.log('   ' + data[j][unameCol]);
+      }
+    }
+  } catch(ex) {
+    Logger.log('❌ fixKaranEmail error: ' + ex.message);
+  }
 }
+
+// ── Quick self-test: run this first to confirm Code.gs is complete ────────
+// ── Full email + deployment diagnostic ───────────────────────
+function verifyCodeGs() {
+  Logger.log('═══════════════════════════════════════════');
+  Logger.log('   Code.gs Verification & Email Diagnostic');
+  Logger.log('═══════════════════════════════════════════');
+
+  // 1. Core functions
+  Logger.log('');
+  Logger.log('--- Core Functions ---');
+  Logger.log('doGet:                   ' + (typeof doGet === 'function'));
+  Logger.log('addTicket:               ' + (typeof addTicket === 'function'));
+  Logger.log('sendAssignmentNotification: ' + (typeof sendAssignmentNotification === 'function'));
+  Logger.log('sendStatusUpdateEmail:   ' + (typeof sendStatusUpdateEmail === 'function'));
+  Logger.log('sendCriticalAlert:       ' + (typeof sendCriticalAlert === 'function'));
+  Logger.log('writeAuditHandler:       ' + (typeof writeAuditHandler === 'function'));
+  Logger.log('setupAuditLogSheet:      ' + (typeof setupAuditLogSheet === 'function'));
+
+  // 2. Config values
+  Logger.log('');
+  Logger.log('--- Config ---');
+  Logger.log('FROM_EMAIL:         ' + FROM_EMAIL);
+  Logger.log('REPORT_RECIPIENTS:  ' + REPORT_RECIPIENTS.join(', '));
+  Logger.log('SHEETS.users:       ' + SHEETS.users);
+  Logger.log('SHEETS.tickets:     ' + SHEETS.tickets);
+
+  // 3. AUTHORITY_EMAILS map
+  Logger.log('');
+  Logger.log('--- AUTHORITY_EMAILS (first 5) ---');
+  var authKeys = Object.keys(AUTHORITY_EMAILS);
+  Logger.log('Total entries: ' + authKeys.length);
+  for (var i = 0; i < Math.min(5, authKeys.length); i++) {
+    Logger.log('  ' + authKeys[i] + ' → ' + AUTHORITY_EMAILS[authKeys[i]]);
+  }
+
+  // 4. Users sheet email check
+  Logger.log('');
+  Logger.log('--- Users Sheet Emails ---');
+  try {
+    var users = readSheet(SHEETS.users);
+    var withEmail = 0, withoutEmail = 0;
+    users.forEach(function(row) {
+      var email = (row['Email'] || '').trim();
+      if (email) {
+        withEmail++;
+        Logger.log('  ✅ @' + row['Username'] + ' → ' + email);
+      } else {
+        withoutEmail++;
+        Logger.log('  ⚠️  @' + (row['Username']||'?') + ' → NO EMAIL');
+      }
+    });
+    Logger.log('With email: ' + withEmail + ' | Without: ' + withoutEmail);
+  } catch(ex) {
+    Logger.log('ERROR reading Users sheet: ' + ex.message);
+  }
+
+  // 5. MailApp quota
+  Logger.log('');
+  Logger.log('--- MailApp Quota ---');
+  try {
+    var remaining = MailApp.getRemainingDailyQuota();
+    Logger.log('Remaining daily quota: ' + remaining + ' emails');
+    if (remaining < 5) {
+      Logger.log('⚠️  QUOTA NEARLY EXHAUSTED — emails may not send!');
+    } else {
+      Logger.log('✅ Quota OK');
+    }
+  } catch(ex) {
+    Logger.log('Could not read quota: ' + ex.message);
+  }
+
+  // 6. Ping test
+  Logger.log('');
+  Logger.log('--- Ping Test ---');
+  try {
+    var r = doGet({ parameter: { action: 'ping' } });
+    Logger.log(r.getContent());
+  } catch(ex) {
+    Logger.log('Ping failed: ' + ex.message);
+  }
+
+  Logger.log('');
+  Logger.log('═══════════════════════════════════════════');
+  Logger.log('Run testAssignmentNotification() to send test email');
+  Logger.log('═══════════════════════════════════════════');
+}
+
 
 function testPing() {
   var r = doGet({ parameter: { action: 'ping' } });
@@ -1454,10 +1598,6 @@ function updateRowHandler(p) {
 // ════════════════════════════════════════════════════════════
 
 // Email recipients — add/remove as needed
-var REPORT_RECIPIENTS = [
-  'sknadaf@mitacsc.ac.in',
-  'it-admin@mitacsc.ac.in'
-];
 
 function sendDailyReport() {
   try {
@@ -1583,8 +1723,8 @@ function sendDailyReport() {
 
     REPORT_RECIPIENTS.forEach(function(recipient) {
       MailApp.sendEmail({
-        to:       recipient,
-        subject:  subject,
+        to:       resolveEmail(recipient, 'Daily Report'),
+        subject:  resolveSubject(subject, recipient),
         htmlBody: html,
         body:     buildPlainTextReport(open, critical, inProg, resolved, woOpen, expiring, todayStr)
       });
@@ -1903,7 +2043,7 @@ function sendCriticalAlert(ticketId, description, dept, assignedTo) {
     ].join('');
 
     REPORT_RECIPIENTS.forEach(function(recipient) {
-      MailApp.sendEmail({ to: recipient, subject: subject, htmlBody: html,
+      MailApp.sendEmail({ to: resolveEmail(recipient, 'Critical Alert'), subject: resolveSubject(subject, recipient), htmlBody: html,
         body: 'CRITICAL Ticket: ' + ticketId + '\nDept: ' + dept + '\nAssigned: ' + assignedTo + '\n' + description });
     });
     Logger.log('✅ Critical alert sent for ' + ticketId);
@@ -1998,7 +2138,7 @@ function sendWeeklyReport() {
       '</div></div></div>';
 
     REPORT_RECIPIENTS.forEach(function(r) {
-      MailApp.sendEmail({ to: r, subject: subject, htmlBody: html,
+      MailApp.sendEmail({ to: resolveEmail(r, 'Weekly Report'), subject: resolveSubject(subject, r), htmlBody: html,
         body: 'Weekly IT Report\nOpened: ' + opened + ' | Resolved: ' + resolved + ' | Critical: ' + critical + ' | Still Open: ' + stillOpen });
     });
 
@@ -2039,74 +2179,199 @@ function setupAllTriggers() {
 // ── Test all email functions ──────────────────────────────────────────
 function testAllEmails() {
   Logger.log('=== Testing ALL email notification functions ===');
+  Logger.log('NOTE: All test emails go to ADMIN only — no real users contacted');
+  Logger.log('Admin: ' + (REPORT_RECIPIENTS[0] || FROM_EMAIL));
   Logger.log('');
 
-  // 1. Assignment notification (Tech + Authority + Admin)
-  Logger.log('--- Test 1: Assignment notification ---');
+  // 1. Assignment notification — admin only
+  Logger.log('--- Test 1: Assignment notification (admin report only) ---');
   testAssignmentNotification();
 
-  // 2. Critical alert
+  // 2. Critical alert — goes to REPORT_RECIPIENTS (admin) only
   Logger.log('--- Test 2: Critical alert ---');
-  sendCriticalAlert('MIT-IT-TEST', 'TEST: Critical issue — please verify test email', 'HOD Computer Application', 'Rutuj Deshmukh (IT Tech)');
-  Logger.log('✅ Critical alert sent');
+  sendCriticalAlert('MIT-IT-TEST', 'TEST: Critical issue — admin only', 'HOD Computer Application', 'System Administrator');
+  Logger.log('✅ Critical alert sent to admin');
 
-  // 3. Status update emails
-  Logger.log('--- Test 3: Status update → Resolved ---');
+  // 3. Status update — admin only
+  Logger.log('--- Test 3: Status update (admin report only) ---');
   testStatusUpdateEmail();
 
-  // 4. Daily report
+  // 4. Daily report — admin only
   Logger.log('--- Test 4: Daily admin report ---');
   sendDailyReport();
-  Logger.log('✅ Daily report sent');
+  Logger.log('✅ Daily report sent to admin');
 
-  // 5. Weekly report
+  // 5. Weekly report — admin only
   Logger.log('--- Test 5: Weekly report ---');
   sendWeeklyReport();
-  Logger.log('✅ Weekly report sent');
+  Logger.log('✅ Weekly report sent to admin');
 
   Logger.log('');
   Logger.log('=== ALL TESTS COMPLETE ===');
-  Logger.log('Check inbox: ' + REPORT_RECIPIENTS.join(', '));
-  Logger.log('Check tech inbox: ' + (USER_EMAILS['rutuj'] || 'rutuj email not set'));
+  Logger.log('All results sent to admin inbox: ' + REPORT_RECIPIENTS.join(', '));
 }
 
 // ── Test assignment notification ──────────────────────────────
 function testAssignmentNotification() {
-  Logger.log('Testing assignment: Tech=Rutuj, Authority=Admin');
+  Logger.log('=== Assignment Email Test (all emails → Admin) ===');
+  Logger.log('Quota remaining: ' + MailApp.getRemainingDailyQuota());
+  Logger.log('FROM_EMAIL: ' + FROM_EMAIL);
+
+  var adminMail = REPORT_RECIPIENTS[0] || FROM_EMAIL;
+
+  // Step 1: Simple direct test
+  try {
+    MailApp.sendEmail({
+      to: adminMail, from: FROM_EMAIL, name: 'MIT ACSC IT Section',
+      subject: 'TEST Email ' + new Date().toLocaleString('en-IN'),
+      body: 'If you receive this, MailApp is working. FROM: ' + FROM_EMAIL
+    });
+    Logger.log('✅ Direct MailApp test SENT to: ' + adminMail);
+  } catch(ex) {
+    Logger.log('❌ Direct MailApp FAILED: ' + ex.message);
+    return;
+  }
+
+  // Step 2: Full assignment notification — ALL emails forced to admin
+  // Override USER_EMAILS and AUTHORITY_EMAILS temporarily for test
+  var savedUserEmails = USER_EMAILS['admin'];
+  var savedAuthEmails = AUTHORITY_EMAILS['System Administrator'];
+
+  // Force all lookups to resolve to admin email
+  USER_EMAILS['admin'] = adminMail;
+  AUTHORITY_EMAILS['System Administrator'] = adminMail;
+
   sendAssignmentNotification('MIT-IT-TEST', {
-    assignedTo:  'Rutuj Deshmukh (IT Tech)',
-    assignedBy:  'System Administrator',
+    assignedTo:  'System Administrator',   // maps to admin email
+    assignedBy:  'System Administrator',   // maps to admin email
     priority:    'High',
     category:    'Network / Connectivity',
     dept:        'HOD Computer Application',
     location:    'Lab 3',
-    description: 'TEST: LAN cable issue — please verify this is a test email'
+    description: 'TEST: All 3 emails (Tech + Authority + Admin CC) should arrive at admin inbox'
   });
-  Logger.log('✅ Assignment test done. Tech: ' + (USER_EMAILS['rutuj'] || 'No email') + ' | Admin: ' + (REPORT_RECIPIENTS[0] || 'No admin email'));
+
+  Logger.log('');
+  Logger.log('All test emails sent to Admin: ' + adminMail);
+  Logger.log('Check admin inbox for 3 emails:');
+  Logger.log('  1. Direct MailApp test');
+  Logger.log('  2. Assignment → Tech (admin)');
+  Logger.log('  3. Assignment → Authority (admin)');
+  Logger.log('  4. Assignment → Admin CC (admin)');
 }
 
-// ── Test status update email ──────────────────────────────────
+// ── Test Karan email lookup — sends result to ADMIN only ─────
+function testKaranEmail() {
+  Logger.log('═══════════════════════════════════════');
+  Logger.log('   Karan Email Lookup Test');
+  Logger.log('═══════════════════════════════════════');
+  Logger.log('Quota remaining: ' + MailApp.getRemainingDailyQuota());
+
+  // Check what email GAS resolves for Karan
+  var karanEmailMap   = USER_EMAILS['karan'] || '⚠️ NOT SET in USER_EMAILS';
+  var karanEmailSheet = '⚠️ NOT FOUND in Users sheet';
+
+  try {
+    var users = readSheet(SHEETS.users);
+    users.forEach(function(row) {
+      if ((row['Username']||'').toLowerCase() === 'karan') {
+        karanEmailSheet = (row['Email']||'').trim() || '⚠️ EMPTY in sheet';
+      }
+    });
+  } catch(ex) {
+    karanEmailSheet = '❌ Sheet read error: ' + ex.message;
+  }
+
+  Logger.log('USER_EMAILS[karan]:   ' + karanEmailMap);
+  Logger.log('Users sheet [karan]:  ' + karanEmailSheet);
+  Logger.log('');
+
+  // Send report to ADMIN only — never to actual user
+  var adminMail = REPORT_RECIPIENTS[0] || FROM_EMAIL;
+  try {
+    MailApp.sendEmail({
+      to:       adminMail,
+      from:     FROM_EMAIL,
+      name:     'MIT ACSC IT Section',
+      subject:  '🧪 Karan Email Lookup Test — ' + new Date().toLocaleString('en-IN'),
+      htmlBody: '<div style="font-family:Arial;padding:20px;max-width:500px">' +
+                '<h3 style="color:#1F3864">Karan Email Lookup Result</h3>' +
+                '<table style="border-collapse:collapse;width:100%;font-size:13px">' +
+                '<tr style="background:#f1f5f9"><td style="padding:8px;border:1px solid #e2e8f0;font-weight:bold">Source</td>' +
+                '<td style="padding:8px;border:1px solid #e2e8f0;font-weight:bold">Email Found</td></tr>' +
+                '<tr><td style="padding:8px;border:1px solid #e2e8f0">USER_EMAILS map</td>' +
+                '<td style="padding:8px;border:1px solid #e2e8f0;color:#16a34a">' + karanEmailMap + '</td></tr>' +
+                '<tr style="background:#f1f5f9"><td style="padding:8px;border:1px solid #e2e8f0">Users Sheet</td>' +
+                '<td style="padding:8px;border:1px solid #e2e8f0;color:#16a34a">' + karanEmailSheet + '</td></tr>' +
+                '</table>' +
+                '<p style="margin-top:16px;font-size:12px;color:#6b7280">' +
+                'Both should show <b>karanrautrao07@gmail.com</b><br>' +
+                'When a ticket is assigned to Karan, email goes to the Users sheet value.' +
+                '</p></div>',
+      body:     'Karan email check:\nUSER_EMAILS: ' + karanEmailMap +
+                '\nUsers sheet: ' + karanEmailSheet
+    });
+    Logger.log('✅ Report sent to admin: ' + adminMail);
+    Logger.log('Check admin inbox for lookup result.');
+  } catch(ex) {
+    Logger.log('❌ Failed: ' + ex.message);
+  }
+}
+
+// ── Test status update email — report to ADMIN only ──────────
 function testStatusUpdateEmail() {
-  Logger.log('Testing status update → Resolved');
-  sendStatusUpdateEmail('MIT-IT-TEST', 'Resolved', {
-    'Assigned To': 'Rutuj Deshmukh (IT Tech)',
-    'Assigned By': 'System Administrator',
-    'Category':    'Network / Connectivity',
-    'Priority':    'High',
-    'Department':  'HOD Computer Application',
-    'Description': 'TEST: LAN cable issue — status update test'
+  var adminMail = REPORT_RECIPIENTS[0] || FROM_EMAIL;
+  Logger.log('Status update test — results go to admin: ' + adminMail);
+
+  // Simulate status changes and capture what would be sent
+  var results = [];
+
+  // Override MailApp temporarily by checking who would receive
+  // We check the lookup logic without sending to real users
+  var testCases = [
+    { status:'Resolved',   assignedTo:'Rutuj Deshmukh (IT Tech)', assignedBy:'System Administrator' },
+    { status:'In Progress',assignedTo:'Rutuj Deshmukh (IT Tech)', assignedBy:'HOD Computer Application' },
+    { status:'Closed',     assignedTo:'Karan RAC IT Solutions (IT Tech)', assignedBy:'Director' }
+  ];
+
+  testCases.forEach(function(tc) {
+    var techFirst = tc.assignedTo.split(' ')[0].toLowerCase();
+    var techEmail = USER_EMAILS[techFirst] || '⚠️ not found';
+    var authEmail = AUTHORITY_EMAILS[tc.assignedBy] || '⚠️ not found';
+    results.push(tc.status + ': Tech=' + techEmail + ' | Auth=' + authEmail);
+    Logger.log('  ' + tc.status + ' → Tech: ' + techEmail + ' | Auth: ' + authEmail);
   });
-  Logger.log('✅ Status update test done');
-  Logger.log('Testing status update → In Progress');
-  sendStatusUpdateEmail('MIT-IT-TEST', 'In Progress', {
-    'Assigned To': 'Rutuj Deshmukh (IT Tech)',
-    'Assigned By': 'System Administrator',
-    'Category':    'Printer Issue',
-    'Priority':    'Medium',
-    'Department':  'Admin Office',
-    'Description': 'TEST: Printer not working — in progress test'
-  });
-  Logger.log('✅ In Progress status test done');
+
+  // Send summary report to admin only
+  try {
+    MailApp.sendEmail({
+      to:       adminMail,
+      from:     FROM_EMAIL,
+      name:     'MIT ACSC IT Section',
+      subject:  '🧪 TEST: Status Update Email Lookup — ' + new Date().toLocaleString('en-IN'),
+      htmlBody: '<div style="font-family:Arial;padding:20px;max-width:600px">' +
+                '<h3 style="color:#1F3864">Status Update Email Lookup Test</h3>' +
+                '<p style="color:#6b7280;font-size:12px">Admin-only diagnostic — no emails sent to actual users</p>' +
+                '<table style="border-collapse:collapse;width:100%;font-size:13px">' +
+                '<tr style="background:#1F3864"><th style="padding:8px;color:#fff;text-align:left">Status</th>' +
+                '<th style="padding:8px;color:#fff;text-align:left">Tech Email</th>' +
+                '<th style="padding:8px;color:#fff;text-align:left">Authority Email</th></tr>' +
+                testCases.map(function(tc, i) {
+                  var techFirst = tc.assignedTo.split(' ')[0].toLowerCase();
+                  var tEmail = USER_EMAILS[techFirst] || '⚠️ not found';
+                  var aEmail = AUTHORITY_EMAILS[tc.assignedBy] || '⚠️ not found';
+                  var bg = i%2===0 ? '#ffffff' : '#f8fafc';
+                  return '<tr style="background:'+bg+'"><td style="padding:8px;border-bottom:1px solid #e2e8f0">' + tc.status + '</td>' +
+                         '<td style="padding:8px;border-bottom:1px solid #e2e8f0;color:' + (tEmail.includes('⚠️')?'#dc2626':'#16a34a') + '">' + tEmail + '</td>' +
+                         '<td style="padding:8px;border-bottom:1px solid #e2e8f0;color:' + (aEmail.includes('⚠️')?'#dc2626':'#16a34a') + '">' + aEmail + '</td></tr>';
+                }).join('') +
+                '</table></div>',
+      body: 'Status update email lookup:\n' + results.join('\n')
+    });
+    Logger.log('✅ Status update test report sent to admin: ' + adminMail);
+  } catch(ex) {
+    Logger.log('❌ Failed: ' + ex.message);
+  }
 }
 
 
@@ -2134,8 +2399,6 @@ function testStatusUpdateEmail() {
 //    We match by first name (first word of Full Name) —
 //    same logic as the portal's getVisibleRows() filter.
 // ════════════════════════════════════════════════════════════
-
-var FROM_EMAIL = 'sknadaf@mitacsc.ac.in';   // Sender — must be a Google account that runs this script
 
 function sendDailyPendingTaskReminder() {
   try {
@@ -2236,11 +2499,11 @@ function sendDailyPendingTaskReminder() {
           ' | ' + myPending.length + ' Task(s) Pending';
 
         MailApp.sendEmail({
-          to:       user.email,
+          to:       resolveEmail(user.email, 'Reminder for @'+user.username),
           replyTo:  FROM_EMAIL,
           from:     FROM_EMAIL,
           name:     'MIT ACSC IT Section',
-          subject:  subject,
+          subject:  resolveSubject(subject, user.email),
           htmlBody: html,
           body:     buildPlainReminderText(firstName, myPending, myWOs, myOverdue, todayStr)
         });
@@ -2484,11 +2747,11 @@ function testSendPendingReminder() {
   }
 }
 
-// Test: sends reminder to a SINGLE user by username (for debugging)
+// Test: shows reminder PREVIEW to ADMIN only — never sends to actual user
 function testReminderForUser() {
-  var targetUsername = 'rutuj'; // ← change to the username you want to test
+  var targetUsername = 'rutuj'; // ← change username to preview any user
+  var adminMail = REPORT_RECIPIENTS[0] || FROM_EMAIL;
 
-  // Temporarily patch userList to only include this one user
   var allTickets = readSheet(SHEETS.tickets).map(normalizeTicketRow);
   var allWOs     = readSheet(SHEETS.wos);
   var usersSheet = readSheet(SHEETS.users || 'Users');
@@ -2510,41 +2773,47 @@ function testReminderForUser() {
     role:     'tech'
   };
 
-  if (!user.email) { Logger.log('❌ No email for user: ' + targetUsername); return; }
-
-  var firstName = user.name.split(' ')[0];
+  var firstName      = user.name.split(' ')[0];
   var firstNameLower = firstName.toLowerCase();
 
   var myPending = allTickets.filter(function(t) {
     var a = (t.assignedTo||'').toLowerCase();
-    return a.includes(firstNameLower) && (t.status==='Open'||t.status==='In Progress'||t.status==='Pending Vendor'||t.status==='On Hold');
+    return a.includes(firstNameLower) &&
+           (t.status==='Open'||t.status==='In Progress'||t.status==='Pending Vendor'||t.status==='On Hold');
   });
   var myWOs = allWOs.filter(function(w) {
-    var c = (w['Coordinator']||'').toLowerCase();
-    return c.includes(firstNameLower);
+    return (w['Coordinator']||'').toLowerCase().includes(firstNameLower);
   });
   var myOverdue = myPending.filter(function(t) { return t.date && t.date < todayStr; });
 
-  Logger.log('User: ' + user.name + ' <' + user.email + '>');
-  Logger.log('Pending tickets: ' + myPending.length + ' | WOs: ' + myWOs.length + ' | Overdue: ' + myOverdue.length);
+  Logger.log('User: @' + targetUsername + ' | Name: ' + user.name);
+  Logger.log('Registered email: ' + (user.email || '⚠️ NOT SET'));
+  Logger.log('Pending: ' + myPending.length + ' | WOs: ' + myWOs.length + ' | Overdue: ' + myOverdue.length);
 
   if (myPending.length === 0 && myWOs.length === 0) {
-    Logger.log('No pending tasks — test email will not be sent (as per logic: skip users with no tasks)');
-    Logger.log('Add a test ticket assigned to "' + user.name + '" first, then re-run.');
+    Logger.log('No pending tasks — no reminder would be sent for this user.');
     return;
   }
 
-  var overdueWarning = myOverdue.length > 0 ? '<div style="color:red">⚠️ ' + myOverdue.length + ' overdue</div>' : '';
+  var overdueWarning = myOverdue.length > 0 ? '<div style="color:#dc2626">⚠️ ' + myOverdue.length + ' overdue</div>' : '';
   var html = buildReminderHTML(user, firstName, myPending, myWOs, myOverdue, overdueWarning, todayStr);
 
+  // ── Send PREVIEW to ADMIN ONLY — never to actual user ──────
   MailApp.sendEmail({
-    to:       user.email,
-    replyTo:  FROM_EMAIL,
-    name:     'MIT ACSC IT Section',
-    subject:  '[TEST] Daily Task Reminder for ' + firstName + ' — ' + todayStr,
-    htmlBody: html,
-    body:     buildPlainReminderText(firstName, myPending, myWOs, myOverdue, todayStr)
+    to:      adminMail,
+    from:    FROM_EMAIL,
+    name:    'MIT ACSC IT Section',
+    subject: '[ADMIN PREVIEW] Reminder for @' + targetUsername + ' — ' + todayStr,
+    htmlBody: '<div style="background:#fef3c7;border:2px solid #f59e0b;padding:10px 14px;' +
+              'margin-bottom:16px;border-radius:6px;font-size:12px;font-family:Arial">' +
+              '<b>⚠️ ADMIN PREVIEW ONLY</b><br>This shows the reminder that <b>@' + targetUsername +
+              '</b> would receive.<br>Their actual email: <b>' + (user.email || 'NOT SET') + '</b>' +
+              '</div>' + html,
+    body: '[ADMIN PREVIEW] Reminder for @' + targetUsername +
+          ' (actual: ' + user.email + ')\n\n' +
+          buildPlainReminderText(firstName, myPending, myWOs, myOverdue, todayStr)
   });
 
-  Logger.log('✅ Test reminder sent to: ' + user.email);
+  Logger.log('✅ Preview sent to ADMIN: ' + adminMail);
+  Logger.log('   (Would go to: ' + (user.email || '⚠️ NO EMAIL SET') + ')');
 }
